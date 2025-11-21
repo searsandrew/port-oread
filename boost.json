@@ -1,0 +1,12 @@
+{
+    "agents": [
+        "phpstorm"
+    ],
+    "editors": [
+        "phpstorm"
+    ],
+    "guidelines": [
+        "laravel/fortify"
+    ],
+    "herd_mcp": true
+}
