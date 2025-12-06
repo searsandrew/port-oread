@@ -165,17 +165,17 @@ return [
             'minify_enabled' => env('NATIVEPHP_ANDROID_MINIFY_ENABLED', false),
             'shrink_resources' => env('NATIVEPHP_ANDROID_SHRINK_RESOURCES', false),
             'obfuscate' => env('NATIVEPHP_ANDROID_OBFUSCATE', false),
-            
+
             // Debug Symbol Configuration - currently enabled
             'debug_symbols' => env('NATIVEPHP_ANDROID_DEBUG_SYMBOLS', 'FULL'),
             'generate_mapping_files' => env('NATIVEPHP_ANDROID_MAPPING_FILES', false),
             'mapping_file_path' => env('NATIVEPHP_ANDROID_MAPPING_PATH', 'build/outputs/mapping/release/'),
-            
+
             // ProGuard Rules - currently disabled
             'keep_line_numbers' => env('NATIVEPHP_ANDROID_KEEP_LINE_NUMBERS', false),
             'keep_source_file' => env('NATIVEPHP_ANDROID_KEEP_SOURCE_FILE', false),
             'custom_proguard_rules' => env('NATIVEPHP_ANDROID_CUSTOM_PROGUARD_RULES', []),
-            
+
             // Build Performance - using Gradle defaults
             'parallel_builds' => env('NATIVEPHP_ANDROID_PARALLEL_BUILDS', true),
             'incremental_builds' => env('NATIVEPHP_ANDROID_INCREMENTAL_BUILDS', true),
@@ -221,15 +221,15 @@ return [
     |
     */
     'app_store_connect' => [
-        
+
         'api_key' => env('APP_STORE_API_KEY'),
-        
+
         'api_key_id' => env('APP_STORE_API_KEY_ID'),
-        
+
         'api_issuer_id' => env('APP_STORE_API_ISSUER_ID'),
-        
+
         'app_name' => env('APP_STORE_APP_NAME'),
-        
+
     ],
 
     /*
@@ -248,13 +248,32 @@ return [
     'permissions' => [
         'biometric' => false,
         'camera' => false,
-        'nfc' => false,
+        'microphone' => false,
+        'microphone_background' => false,
         'push_notifications' => false,
         'location' => false,
         'vibrate' => false,
         'storage_read' => false,
         'storage_write' => false,
+        'scanner' => false,
+        'network_state' => true,
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | iPad Support
+    |--------------------------------------------------------------------------
+    |
+    | Enable or disable iPad support for your iOS app. When enabled, your app
+    | will support iPad devices and all iPad orientations (portrait, upside down,
+    | landscape left, and landscape right) as required by Apple's App Store
+    | guidelines. When disabled, your app will be iPhone-only.
+    |
+    | Note: Once an app is deployed to the App Store with iPad
+    | support you cannot revoke this action.
+    |
+    */
+    'ipad' => false,
 
     /*
     |--------------------------------------------------------------------------
