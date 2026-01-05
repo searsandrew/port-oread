@@ -1,0 +1,28 @@
+/* Card flip */
+.card-flip {
+    perspective: 1200px;
+}
+
+.card-flip-inner {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    transform-style: preserve-3d;
+    transition: transform 180ms ease;
+}
+
+.card-flip.is-flipped .card-flip-inner {
+    transform: rotateY(180deg);
+}
+
+.card-face {
+    position: absolute;
+    inset: 0;
+    backface-visibility: hidden;
+    border-radius: 0.75rem;
+    overflow: hidden;
+}
+
+.card-back {
+    transform: rotateY(180deg);
+}
