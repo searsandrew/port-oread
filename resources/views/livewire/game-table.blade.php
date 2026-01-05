@@ -1,250 +1,449 @@
 <?php
 
-use function Livewire\Volt\{state};
 use App\Game\GameService;
+use function Livewire\Volt\{state, mount};
 
 state([
-    'sessionId' => 'local-1',
-    'playerId' => 'p1',
+    'sessionId' => null,
+    'playerId' => '1',
 
-    // Render state
-    'hud' => ['score' => 0, 'credits' => 0],
-    'planets' => [
-        ['id' => 'p1', 'name' => 'Vesper Reach', 'flavor' => 'Cold rings. Hot politics.', 'type' => 'A', 'vp' => 2, 'art' => null],
-    ],
-    'hand' => [
-        ['id' => 'c1', 'img' => '/images/cards/placeholder-1.png'],
-        ['id' => 'c2', 'img' => '/images/cards/placeholder-2.png'],
-        ['id' => 'c3', 'img' => '/images/cards/placeholder-3.png'],
-    ],
-
-    // UI state
+    'hud' => ['score' => 0, 'credits' => 0, 'pot_vp' => 0],
+    'planets' => [],
+    'hand' => [],
     'selectedCardId' => null,
 
-    // Modal state
-    'showCardModal' => false,
-    'modalCardImg' => null,
+    'showCardMenu' => false,
+    'showInfoModal' => false,
 ]);
 
-$mount = function (GameService $game) {
-    // Later: pull a real snapshot from stellar-skirmish.
-    // For now, pick the first card as selected if none.
-    if (is_null($this->selectedCardId) && count($this->hand)) {
-        $this->selectedCardId = $this->hand[0]['id'];
+$applySnapshot = function (array $snapshot) {
+    $this->hud = $snapshot['hud'] ?? $this->hud;
+    $this->planets = $snapshot['planets'] ?? [];
+    $this->hand = $snapshot['hand'] ?? [];
+    $this->selectedCardId = $snapshot['selectedCardId'] ?? ($this->hand[0]['id'] ?? null);
+};
+
+$getSelectedCard = function () {
+    foreach ($this->hand as $c) {
+        if (($c['id'] ?? null) === $this->selectedCardId) return $c;
     }
-
-    // When you're ready to use the engine:
-    // $snap = $game->snapshot($this->sessionId);
-    // $this->applySnapshot($snap);
+    return null;
 };
 
-$applySnapshot = function (array $snap) {
-    $this->hud = $snap['hud'] ?? $this->hud;
-    $this->planets = $snap['planets'] ?? $this->planets;
-    $this->hand = $snap['hand'] ?? $this->hand;
-    $this->selectedCardId = $snap['selectedCardId'] ?? ($this->hand[0]['id'] ?? null);
+$mercAbilityTitle = function (?string $type): string {
+    return match ($type) {
+        'overpower_fifteen' => 'Overpower Fifteen',
+        'reveal_opponents_corp' => 'Intel Leak',
+        'win_all_ties' => 'Tie Breaker',
+        'return_once' => 'One More Run',
+        'discard_planet_draw_new' => 'Scorched Contract',
+        'peek_next_planet' => 'Recon Scan',
+        default => 'Mercenary Ability',
+    };
 };
 
-$selectCard = function (?string $cardId) {
+$mercAbilityDescription = function (?string $type, array $params = []): string {
+    return match ($type) {
+        'overpower_fifteen'
+        => 'When played: if the opponent played <span class="font-semibold">15</span>, treat your strength as <span class="font-semibold">16</span> for this battle.',
+        'reveal_opponents_corp'
+        => 'When played: reveal the opponent’s Corporation.',
+        'win_all_ties'
+        => 'When played: if this battle would be a tie, you win instead.',
+        'return_once'
+        => 'After this battle: return this card to your hand <span class="font-semibold">once</span>.',
+        'discard_planet_draw_new'
+        => 'When played: discard the current planet and reveal a new one into the pot.',
+        'peek_next_planet'
+        => 'When played: look at the next planet in the deck.',
+        default
+        => 'No description available.',
+    };
+};
+
+mount(function (GameService $game) use ($applySnapshot) {
+    $this->sessionId ??= (string) \Illuminate\Support\Str::uuid();
+
+    $snapshot = $game->snapshot($this->sessionId);
+    $applySnapshot($snapshot);
+});
+
+$selectCard = function (string $cardId) {
     $this->selectedCardId = $cardId;
 };
 
-$playSelected = function (GameService $game) {
+$openCardMenu = function (string $cardId) {
+    $this->selectedCardId = $cardId;
+    $this->showCardMenu = true;
+};
+
+$closeCardMenu = function () {
+    $this->showCardMenu = false;
+};
+
+$openInfo = function () {
+    $this->showCardMenu = false;
+    $this->showInfoModal = true;
+};
+
+$closeInfo = function () {
+    $this->showInfoModal = false;
+};
+
+$playSelected = function (GameService $game) use ($applySnapshot) {
     if (!$this->selectedCardId) return;
 
-    // Call the driver (local engine now, online later)
     $result = $game->playCard($this->sessionId, $this->playerId, $this->selectedCardId);
 
-    // 1) Kick off animations (overlay listens for this)
     $effects = $result['effects'] ?? [];
     if (!empty($effects)) {
         $this->dispatch('game-effects', effects: $effects);
     }
 
-    // 2) Update UI snapshot/state
     if (isset($result['snapshot'])) {
-        $this->applySnapshot($result['snapshot']);
+        $applySnapshot($result['snapshot']);
     }
 
-    // 3) Re-init swipers because DOM changed
+    $this->showCardMenu = false;
+
     $this->dispatch('hand-updated');
     $this->dispatch('planets-updated');
 };
 
-$showCardInfo = function (string $cardId) {
-    $card = collect($this->hand)->firstWhere('id', $cardId);
-
-    $this->modalCardImg = $card['img'] ?? null;
-    $this->showCardModal = true;
-};
-
-$closeCardInfo = function () {
-    $this->showCardModal = false;
-    $this->modalCardImg = null;
-};
-
 ?>
 
-<div class="h-dvh w-full bg-zinc-950 text-zinc-100 flex flex-col">
-
-    {{-- 1) TOP HUD --}}
-    <div class="shrink-0 px-4 py-3 border-b border-zinc-800">
+<div
+    class="h-dvh w-full bg-zinc-950 text-zinc-100"
+    x-data="portOreadTable()"
+    x-init="init()"
+    x-on:hand-updated.window="refreshHandSwiper()"
+    x-on:planets-updated.window="refreshPlanetSwiper()"
+>
+    {{-- HUD --}}
+    <div class="px-4 pt-4">
         <div class="flex items-center justify-between">
-            <div class="flex items-center gap-4">
-                <div class="text-sm">
-                    <span class="text-zinc-400">Score</span>
-                    <span class="font-semibold">{{ $score }}</span>
-                </div>
-                <div class="text-sm">
-                    <span class="text-zinc-400">Credits</span>
-                    <span class="font-semibold">{{ $credits }}</span>
-                </div>
+            <div class="space-y-1">
+                <div class="text-xs text-zinc-400">Score</div>
+                <div class="text-xl font-semibold">{{ $hud['score'] ?? 0 }}</div>
             </div>
 
-            {{-- Flux button later; plain for now --}}
-            <button class="text-xs px-3 py-2 rounded-lg border border-zinc-700 bg-zinc-900 hover:bg-zinc-800">
-                Profile
-            </button>
+            <div class="space-y-1 text-right">
+                <div class="text-xs text-zinc-400">Pot VP</div>
+                <div class="text-xl font-semibold">{{ $hud['pot_vp'] ?? 0 }}</div>
+            </div>
         </div>
     </div>
 
-    {{-- 2) PLANET / BATTLEFIELD --}}
-    <div class="flex-1 p-4">
-        <div class="h-full rounded-2xl border border-zinc-800 bg-zinc-900/25 relative overflow-hidden">
-            <div id="planet-stage" class="absolute inset-0">
-                {{-- Planet swiper only matters in tie state; safe even with 1 planet --}}
-                <div
-                    class="swiper h-full"
-                    x-data
-                    x-init="
-                        window.initPlanetSwiper?.($el);
-                        $wire.on('planets-updated', () => window.initPlanetSwiper?.($el));
-                    "
-                >
-                    <div class="swiper-wrapper h-full">
-                        @foreach($planets as $planet)
-                            <div class="swiper-slide h-full" style="width: 86%;">
-                                <button
-                                    type="button"
-                                    class="w-full h-full text-left p-4 flex flex-col justify-between"
-                                    wire:click="openPlanet"
-                                >
-                                    <div class="flex items-start justify-between">
-                                        {{-- Type + VP “circles” --}}
-                                        <div class="flex gap-2">
-                                            <div class="w-10 h-10 rounded-full border border-zinc-700 bg-zinc-950/40 flex items-center justify-center text-sm font-semibold">
-                                                {{ $planet['type'] }}
-                                            </div>
-                                        </div>
+    {{-- Planet Stage --}}
+    <div class="px-4 pt-4">
+        <div class="rounded-3xl border border-white/10 bg-white/5 p-4">
+            <div class="flex items-start justify-between gap-4">
+                <div>
+                    <div class="text-sm text-zinc-400">Planet in the pot</div>
+                    <div class="mt-1 text-lg font-semibold">
+                        {{ ($planets[0]['name'] ?? '—') }}
+                    </div>
+                    <div class="mt-1 text-sm text-zinc-300">
+                        {{ ($planets[0]['flavor'] ?? '') }}
+                    </div>
+                </div>
 
-                                        <div class="w-10 h-10 rounded-full border border-zinc-700 bg-zinc-950/40 flex items-center justify-center text-sm font-semibold">
-                                            {{ $planet['vp'] }}
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <div class="text-lg font-semibold leading-tight">{{ $planet['name'] }}</div>
-                                        <div class="text-sm text-zinc-400 mt-1">{{ $planet['flavor'] }}</div>
-                                        <div class="text-xs text-zinc-500 mt-2">Tap to view card</div>
-                                    </div>
-                                </button>
-                            </div>
-                        @endforeach
+                <div class="flex gap-2">
+                    <div class="h-10 w-10 rounded-full border border-white/10 bg-white/5 grid place-items-center text-sm">
+                        {{ ($planets[0]['type'] ?? '') }}
+                    </div>
+                    <div class="h-10 w-10 rounded-full border border-white/10 bg-white/5 grid place-items-center text-sm">
+                        {{ ($planets[0]['vp'] ?? 0) }}
                     </div>
                 </div>
             </div>
 
-            {{-- Battle overlay region (we’ll animate ships in here later) --}}
-            <div id="battle-overlay" class="pointer-events-none absolute inset-0 z-20" x-data="battleOverlay()" x-on:game-effects.window="run($event.detail.effects)"></div>
+            {{-- If ties add more planets, we’ll show a swipe hint --}}
+            @if(count($planets) > 1)
+                <div class="mt-3 text-xs text-zinc-400">
+                    Tie stack: swipe to view {{ count($planets) }} planets in the pot.
+                </div>
+            @endif
         </div>
     </div>
 
-    {{-- 3) HAND CAROUSEL --}}
-    <div class="shrink-0 p-3 border-t border-zinc-800 bg-zinc-950/85" x-data="handUI(@entangle('selectedCardId'))" @click.self="closeControls()">
-        <div class="swiper" x-data
-            x-init="window.initHandSwiper($el, {
-                    onCenterChanged: (cardId) => $wire.selectCard(cardId),
-                    onSwipeUpPlay: () => $wire.playSelected(),
-                  });
+    {{-- Hand Carousel --}}
+    <div class="px-4 pt-4">
+        <div class="text-sm text-zinc-400 mb-2">Your hand</div>
 
-                  $wire.on('hand-updated', () => {
-                    window.initHandSwiper($el, {
-                      onCenterChanged: (cardId) => $wire.selectCard(cardId),
-                      onSwipeUpPlay: () => $wire.playSelected(),
-                    });
-                  });
-                ">
-            <div class="swiper-wrapper">
-                @foreach($hand as $card)
-                    <div class="swiper-slide" style="width: 74%;">
-                        <div class="relative">
-                            <button type="button" class="block w-full rounded-2xl overflow-hidden border border-zinc-700 bg-zinc-900" @click.stop="toggleControls('{{ $card['id'] }}')" :class="isSelected('{{ $card['id'] }}') ? 'ring-2 ring-zinc-200/25' : ''">
-                                <img src="{{ $card['img'] }}" alt="" class="w-full h-[260px] object-cover select-none" draggable="false" data-card-id="{{ $card['id'] }}">
-                            </button>
+        <div class="relative">
+            <div class="swiper" x-ref="handSwiper">
+                <div class="swiper-wrapper">
+                    @foreach($hand as $card)
+                        <div class="swiper-slide">
+                            <div
+                                class="select-none"
+                                x-on:click="$wire.openCardMenu('{{ $card['id'] }}')"
+                                x-on:touchstart="touchStart($event)"
+                                x-on:touchend="touchEnd($event, '{{ $card['id'] }}')"
+                            >
+                                <div class="relative">
+                                    <img
+                                        src="{{ $card['img'] }}"
+                                        class="block w-full h-auto rounded-2xl border border-white/10"
+                                        draggable="false"
+                                    />
 
-                            {{-- Controls (only for selected card AND only when open) --}}
-                            <div class="absolute left-2 right-2 -bottom-3 translate-y-full" x-show="controlsOpenFor('{{ $card['id'] }}')" x-transition.opacity>
-                                <div class="rounded-2xl border border-zinc-700 bg-zinc-950/95 backdrop-blur px-2 py-2 flex gap-2">
-                                    <button class="flex-1 px-3 py-2 rounded-xl bg-zinc-100 text-zinc-900 text-sm font-semibold" @click.stop="$wire.playSelected(); closeControls()">
-                                        Play
-                                    </button>
+                                    {{-- Point 4: merc pip --}}
+                                    @if(($card['isMerc'] ?? false) === true)
+                                        <div class="absolute top-2 right-2 h-3 w-3 rounded-full border border-white/30 bg-white/20"></div>
+                                    @endif
+                                </div>
 
-                                    <button class="px-3 py-2 rounded-xl border border-zinc-700 bg-zinc-900 text-sm" @click.stop="closeControls()">
-                                        Cancel
-                                    </button>
-
-                                    <button class="px-3 py-2 rounded-xl border border-zinc-700 bg-zinc-900 text-sm" @click.stop="$wire.showCardInfo('{{ $card['id'] }}')">
-                                        Info
-                                    </button>
+                                <div class="mt-2 text-center text-xs text-zinc-400">
+                                    Strength {{ $card['id'] }}
                                 </div>
                             </div>
                         </div>
+                    @endforeach
+                </div>
+            </div>
+
+            <div class="pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-zinc-950 to-transparent"></div>
+            <div class="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-zinc-950 to-transparent"></div>
+        </div>
+    </div>
+
+    {{-- Action Sheet (tap card -> Play/Cancel/Info) --}}
+    <div
+        x-cloak
+        x-show="@js($showCardMenu)"
+        class="fixed inset-0 z-40"
+    >
+        <div class="absolute inset-0 bg-black/60" x-on:click="$wire.closeCardMenu()"></div>
+
+        <div class="absolute left-0 right-0 bottom-0 p-4">
+            <div class="rounded-3xl border border-white/10 bg-zinc-950 p-4">
+                @php($selected = $getSelectedCard())
+
+                <div class="flex items-center justify-between">
+                    <div class="text-sm text-zinc-400">Selected</div>
+                    <div class="text-sm font-semibold">
+                        {{ $selected['id'] ?? '—' }}
                     </div>
-                @endforeach
+                </div>
+
+                <div class="mt-4 grid grid-cols-3 gap-2">
+                    <button
+                        class="rounded-2xl bg-white/10 px-3 py-3 text-sm"
+                        wire:click="playSelected"
+                    >
+                        Play
+                    </button>
+
+                    <button
+                        class="rounded-2xl bg-white/5 px-3 py-3 text-sm"
+                        wire:click="closeCardMenu"
+                    >
+                        Cancel
+                    </button>
+
+                    <button
+                        class="rounded-2xl bg-white/5 px-3 py-3 text-sm"
+                        wire:click="openInfo"
+                    >
+                        Info
+                    </button>
+                </div>
+
+                <div class="mt-2 text-xs text-zinc-500">
+                    Tip: swipe up on a card to play instantly.
+                </div>
             </div>
         </div>
     </div>
 
-    {{-- Planet modal (simple for now; swap to Flux Sheet/Modal) --}}
-    @if($showPlanetModal)
-        <div class="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
-            <div class="w-full max-w-md rounded-2xl border border-zinc-700 bg-zinc-950 p-4">
+    {{-- Info Modal --}}
+    <div
+        x-cloak
+        x-show="@js($showInfoModal)"
+        class="fixed inset-0 z-50"
+    >
+        <div class="absolute inset-0 bg-black/70" x-on:click="$wire.closeInfo()"></div>
+
+        <div class="absolute inset-x-0 top-10 mx-auto max-w-md px-4">
+            <div class="rounded-3xl border border-white/10 bg-zinc-950 p-4">
+                @php($selected = $getSelectedCard())
+
                 <div class="flex items-center justify-between">
-                    <div class="font-semibold">Planet Card</div>
-                    <button class="text-sm text-zinc-400 hover:text-zinc-200" wire:click="closePlanet">Close</button>
+                    <div class="text-sm font-semibold">Card Info</div>
+                    <button class="text-zinc-400" wire:click="closeInfo">✕</button>
                 </div>
 
-                <div class="mt-3 rounded-xl border border-zinc-800 bg-zinc-900/40 h-[380px] flex items-center justify-center text-zinc-500">
-                    Full planet card art goes here
+                @if($selected)
+                    <div class="mt-4">
+                        <img
+                            src="{{ $selected['img'] }}"
+                            class="w-full rounded-2xl border border-white/10"
+                            draggable="false"
+                        />
+
+                        {{-- Point 2: merc section in modal --}}
+                        @if(($selected['isMerc'] ?? false) === true)
+                            <div class="mt-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs">
+                                <span class="h-2 w-2 rounded-full bg-white/40"></span>
+                                Mercenary
+                            </div>
+
+                            <div class="mt-3">
+                                <div class="text-sm font-semibold">
+                                    {{ $selected['merc']['name'] ?? 'Mercenary' }}
+                                </div>
+
+                                <div class="mt-2 rounded-2xl border border-white/10 bg-white/5 p-3">
+                                    <div class="text-sm font-semibold">
+                                        {{ $mercAbilityTitle($selected['merc']['ability_type'] ?? null) }}
+                                    </div>
+                                    <div class="mt-1 text-sm text-zinc-300">
+                                        {!! $mercAbilityDescription($selected['merc']['ability_type'] ?? null, $selected['merc']['params'] ?? []) !!}
+                                    </div>
+                                </div>
+                            </div>
+                        @else
+                            <div class="mt-3 text-sm text-zinc-300">
+                                Standard ship card.
+                            </div>
+                        @endif
+                    </div>
+                @else
+                    <div class="mt-4 text-sm text-zinc-400">
+                        No card selected.
+                    </div>
+                @endif
+
+                <div class="mt-4">
+                    <button
+                        class="w-full rounded-2xl bg-white/10 px-3 py-3 text-sm"
+                        wire:click="closeInfo"
+                    >
+                        Close
+                    </button>
                 </div>
             </div>
         </div>
-    @endif
+    </div>
+
+    {{-- Battle Overlay (reacts to game-effects) --}}
+    <div
+        id="battle-overlay"
+        class="fixed inset-0 z-30 pointer-events-none"
+        x-data="battleOverlay()"
+        x-on:game-effects.window="run($event.detail.effects)"
+    >
+        <template x-if="visible">
+            <div class="absolute inset-0 grid place-items-center bg-black/70">
+                <div class="w-full max-w-md px-6">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="relative">
+                            <img :src="playerImg" class="w-full rounded-2xl border border-white/10" />
+                            <div
+                                class="absolute inset-0 rounded-2xl"
+                                :class="outcome === 'win' ? 'ring-2 ring-white/60' : 'ring-0'"
+                            ></div>
+                        </div>
+                        <div class="relative">
+                            <img :src="enemyImg" class="w-full rounded-2xl border border-white/10" />
+                            <div
+                                class="absolute inset-0 rounded-2xl"
+                                :class="outcome === 'loss' ? 'ring-2 ring-white/60' : 'ring-0'"
+                            ></div>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 text-center text-sm text-zinc-200">
+                        <span x-show="outcome === 'win'">You win the battle.</span>
+                        <span x-show="outcome === 'loss'">You lose the battle.</span>
+                        <span x-show="outcome === 'tie'">Tie — the pot escalates.</span>
+                    </div>
+                </div>
+            </div>
+        </template>
+    </div>
 </div>
 
 <script>
-    window.handUI = (selectedEntangle) => ({
-        selected: selectedEntangle,
-        controlsFor: null,
+    function portOreadTable() {
+        return {
+            handSwiper: null,
+            startY: null,
 
-        isSelected(id) { return this.selected === id; },
+            init() {
+                // Assumes Swiper is available globally (via Vite install or CDN).
+                // If not, install: npm i swiper
+                // and import/init in your app bundle.
+                this.initHandSwiper();
+            },
 
-        toggleControls(id) {
-            // only allow controls for the selected (center) card
-            if (this.selected !== id) {
-                // if you clicked a non-centered card, just close controls;
-                // swiper click-to-center will update selected shortly after
-                this.controlsFor = null;
-                return;
+            initHandSwiper() {
+                if (!window.Swiper) return;
+
+                this.handSwiper = new Swiper(this.$refs.handSwiper, {
+                    slidesPerView: 1.35,
+                    centeredSlides: true,
+                    spaceBetween: 14,
+                });
+            },
+
+            refreshHandSwiper() {
+                this.$nextTick(() => {
+                    if (this.handSwiper) this.handSwiper.update();
+                    else this.initHandSwiper();
+                });
+            },
+
+            refreshPlanetSwiper() {
+                // Placeholder: if/when you add an actual planet Swiper, init/update it here.
+            },
+
+            touchStart(e) {
+                const t = e.touches?.[0];
+                this.startY = t ? t.clientY : null;
+            },
+
+            touchEnd(e, cardId) {
+                const t = e.changedTouches?.[0];
+                if (!t || this.startY === null) return;
+
+                const dy = t.clientY - this.startY;
+
+                // swipe up threshold
+                if (dy < -60) {
+                    this.$wire.selectedCardId = cardId;
+                    this.$wire.playSelected();
+                }
+
+                this.startY = null;
             }
-            this.controlsFor = (this.controlsFor === id) ? null : id;
-        },
+        };
+    }
 
-        controlsOpenFor(id) {
-            return this.controlsFor === id && this.selected === id;
-        },
+    function battleOverlay() {
+        return {
+            visible: false,
+            playerImg: null,
+            enemyImg: null,
+            outcome: 'tie',
 
-        closeControls() { this.controlsFor = null; },
-    });
+            run(effects) {
+                if (!effects || !effects.length) return;
+
+                const e = effects.find(x => x.type === 'battle_resolve');
+                if (!e) return;
+
+                this.playerImg = e.player?.img;
+                this.enemyImg = e.enemy?.img;
+                this.outcome = e.outcome || 'tie';
+
+                this.visible = true;
+
+                // auto-hide after a beat
+                setTimeout(() => this.visible = false, 1100);
+            }
+        };
+    }
 </script>
-
