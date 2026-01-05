@@ -39,10 +39,15 @@
         {
             "type": "composer",
             "url": "https://nativephp.composer.sh"
+        },
+        {
+            "type": "vcs",
+            "url": "https://github.com/searsandrew/stellar-skirmish.git"
         }
     ],
     "require": {
         "php": "^8.2",
+        "jamrfun/stellar-skirmish": "^0.2.1",
         "laravel/fortify": "^1.30",
         "laravel/framework": "^12.0",
         "laravel/tinker": "^2.10.1",

@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "99a2bbb3d152db9dce9e7af1f52b77f3",
+    "content-hash": "818a64c2ac0cbf666b6ce8b2541ed44a",
     "packages": [
         {
             "name": "bacon/bacon-qr-code",
@@ -1156,6 +1156,53 @@
                 }
             ],
             "time": "2025-08-22T14:27:06+00:00"
+        },
+        {
+            "name": "jamrfun/stellar-skirmish",
+            "version": "v0.2.1",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/searsandrew/stellar-skirmish.git",
+                "reference": "2850a41d1802afaba0dd98ce61ecda4608aa3a22"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/searsandrew/stellar-skirmish/zipball/2850a41d1802afaba0dd98ce61ecda4608aa3a22",
+                "reference": "2850a41d1802afaba0dd98ce61ecda4608aa3a22",
+                "shasum": ""
+            },
+            "require": {
+                "php": "^8.3"
+            },
+            "require-dev": {
+                "pestphp/pest": "^3.0"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "StellarSkirmish\\": "src/"
+                }
+            },
+            "autoload-dev": {
+                "psr-4": {
+                    "StellarSkirmish\\Tests\\": "tests/"
+                }
+            },
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Andrew Sears",
+                    "email": "andrew@mayfifteenth.com"
+                }
+            ],
+            "description": "Core game engine for Stellar Empire: Skirmish.",
+            "support": {
+                "source": "https://github.com/searsandrew/stellar-skirmish/tree/v0.2.1",
+                "issues": "https://github.com/searsandrew/stellar-skirmish/issues"
+            },
+            "time": "2025-12-17T20:10:28+00:00"
         },
         {
             "name": "laravel/fortify",
