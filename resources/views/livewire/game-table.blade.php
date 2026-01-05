@@ -1,105 +1,190 @@
 <?php
 
-use Livewire\Volt\Component;
+use function Livewire\Volt\{state};
 
-new class extends Component {
-    public array $hand = [];
+state([
+    'score' => 0,
+    'credits' => 0,
+    'planets' => [
+        // single planet to start; in tie, this becomes 2+ planets
+        ['id' => 'p1', 'name' => 'Vesper Reach', 'flavor' => 'Cold rings. Hot politics.', 'type' => 'A', 'vp' => 2, 'art' => null],
+    ],
+    'hand' => [
+        ['id' => 'c1', 'img' => '/images/cards/placeholder-1.png'],
+        ['id' => 'c2', 'img' => '/images/cards/placeholder-2.png'],
+        ['id' => 'c3', 'img' => '/images/cards/placeholder-3.png'],
+    ],
+    'selectedCardId' => null,
+    'showPlanetModal' => false,
+]);
 
-    public function mount(): void
-    {
-        $this->hand = [
-            ['id' => 'c1', 'name' => 'Kestrel Wing', 'cost' => 2, 'art' => null],
-            ['id' => 'c2', 'name' => 'Dockside Bribe', 'cost' => 1, 'art' => null],
-            ['id' => 'c3', 'name' => 'Orbital Feint', 'cost' => 3, 'art' => null],
-            ['id' => 'c4', 'name' => 'Mercenary Contract', 'cost' => 2, 'art' => null],
-            ['id' => 'c5', 'name' => 'Planetfall Raid', 'cost' => 4, 'art' => null],
-        ];
-    }
+$selectCard = function (string $cardId) {
+    $this->selectedCardId = $cardId;
+};
 
-    public function playCard(string $cardId): void
-    {
-        $this->hand = array_values((array) array_filter($this->hand, fn($c) => $c['id'] !== $cardId));
+$playSelected = function () {
+    if (!$this->selectedCardId) return;
 
-        $this->dispatch('hand-updated');
-    }
-}; ?>
+    // TODO: send to engine; for now just remove it
+    $this->hand = array_values(array_filter($this->hand, fn($c) => $c['id'] !== $this->selectedCardId));
+    $this->selectedCardId = null;
 
-<component>
-    <div class="h-full w-full flex flex-col bg-zinc-950 text-zinc-100">
-        {{-- Top HUD (placeholder) --}}
-        <div class="px-4 py-3 border-b border-zinc-800">
-            <div class="flex items-center justify-between">
-                <div class="text-sm text-zinc-300">Port Oread</div>
-                <div class="text-sm text-zinc-400">T+00:00</div>
+    $this->dispatch('hand-updated');
+    // Later: dispatch('battle-resolve', ...)
+};
+
+$openPlanet = function () {
+    $this->showPlanetModal = true;
+};
+
+$closePlanet = function () {
+    $this->showPlanetModal = false;
+};
+
+?>
+
+<div class="h-dvh w-full bg-zinc-950 text-zinc-100 flex flex-col">
+
+    {{-- 1) TOP HUD --}}
+    <div class="shrink-0 px-4 py-3 border-b border-zinc-800">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <div class="text-sm">
+                    <span class="text-zinc-400">Score</span>
+                    <span class="font-semibold">{{ $score }}</span>
+                </div>
+                <div class="text-sm">
+                    <span class="text-zinc-400">Credits</span>
+                    <span class="font-semibold">{{ $credits }}</span>
+                </div>
             </div>
+
+            {{-- Flux button later; plain for now --}}
+            <button class="text-xs px-3 py-2 rounded-lg border border-zinc-700 bg-zinc-900 hover:bg-zinc-800">
+                Profile
+            </button>
         </div>
+    </div>
 
-        {{-- Board area (placeholder) --}}
-        <div class="flex-1 p-4">
-            <div class="h-full rounded-xl border border-zinc-800 bg-zinc-900/30 flex items-center justify-center text-zinc-500">
-                Board / lanes / battlefield goes here
-            </div>
-        </div>
+    {{-- 2) PLANET / BATTLEFIELD --}}
+    <div class="flex-1 p-4">
+        <div class="h-full rounded-2xl border border-zinc-800 bg-zinc-900/25 relative overflow-hidden">
 
-        {{-- Hand area --}}
-        <div class="p-3 border-t border-zinc-800 bg-zinc-950/80">
-            <div class="swiper" x-data="{ ready: false }"
-                 x-init="
-                    window.initHandSwiper($el);
-                    ready = true;
-
-                    $wire.on('hand-updated', () => {
-                        // Livewire updated DOM, re-init Swiper
-                        window.initHandSwiper($el);
-                    });
-                ">
-                <div class="swiper-wrapper">
-                    @foreach($hand as $card)
-                        <div class="swiper-slide" style="width: 160px;">
-                            <div class="flex flex-col gap-2">
-                                {{-- Tap to flip card --}}
-                                <div class="card-flip w-full h-[220px]" x-data="{ flipped: false }"
-                                    @click="
-                                        const s = $root.closest('.swiper');
-                                        if (s && s.__isHandDragging && s.__isHandDragging()) return;
-                                        flipped = !flipped;
-                                    ">
-                                    <div class="card-flip-inner" :class="{ 'is-flipped': flipped }">
-                                        {{-- Front --}}
-                                        <div class="card-face card-front bg-zinc-800 border border-zinc-700">
-                                            <div class="p-3 h-full flex flex-col">
-                                                <div class="flex items-start justify-between">
-                                                    <div class="text-xs text-zinc-300">Cost</div>
-                                                    <div class="text-lg font-bold">{{ $card['cost'] }}</div>
-                                                </div>
-                                                <div class="mt-auto">
-                                                    <div class="text-sm font-semibold leading-tight">{{ $card['name'] }}</div>
-                                                    <div class="text-xs text-zinc-400">Tap to flip</div>
-                                                </div>
-                                            </div>
+            {{-- Planet swiper only matters in tie state; safe even with 1 planet --}}
+            <div
+                class="swiper h-full"
+                x-data
+                x-init="
+                    window.initPlanetSwiper?.($el);
+                    $wire.on('planets-updated', () => window.initPlanetSwiper?.($el));
+                "
+            >
+                <div class="swiper-wrapper h-full">
+                    @foreach($planets as $planet)
+                        <div class="swiper-slide h-full" style="width: 86%;">
+                            <button
+                                type="button"
+                                class="w-full h-full text-left p-4 flex flex-col justify-between"
+                                wire:click="openPlanet"
+                            >
+                                <div class="flex items-start justify-between">
+                                    {{-- Type + VP “circles” --}}
+                                    <div class="flex gap-2">
+                                        <div class="w-10 h-10 rounded-full border border-zinc-700 bg-zinc-950/40 flex items-center justify-center text-sm font-semibold">
+                                            {{ $planet['type'] }}
                                         </div>
+                                    </div>
 
-                                        {{-- Back --}}
-                                        <div class="card-face card-back bg-zinc-900 border border-zinc-700">
-                                            <div class="p-3 h-full flex flex-col">
-                                                <div class="text-xs text-zinc-400">Card back</div>
-                                                <div class="mt-auto text-xs text-zinc-500">
-                                                    Rules text / tags / faction icons later
-                                                </div>
-                                            </div>
-                                        </div>
+                                    <div class="w-10 h-10 rounded-full border border-zinc-700 bg-zinc-950/40 flex items-center justify-center text-sm font-semibold">
+                                        {{ $planet['vp'] }}
                                     </div>
                                 </div>
 
-                                {{-- Play button --}}
-                                <button class="w-full text-xs px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700" wire:click="playCard('{{ $card['id'] }}')">
-                                    {{ __('Play') }}
-                                </button>
-                            </div>
+                                <div>
+                                    <div class="text-lg font-semibold leading-tight">{{ $planet['name'] }}</div>
+                                    <div class="text-sm text-zinc-400 mt-1">{{ $planet['flavor'] }}</div>
+                                    <div class="text-xs text-zinc-500 mt-2">Tap to view card</div>
+                                </div>
+                            </button>
                         </div>
                     @endforeach
                 </div>
             </div>
+
+            {{-- Battle overlay region (we’ll animate ships in here later) --}}
+            <div class="pointer-events-none absolute inset-0" id="battle-overlay"></div>
+
         </div>
     </div>
-</component>
+
+    {{-- 3) HAND CAROUSEL --}}
+    <div
+        class="shrink-0 p-3 border-t border-zinc-800 bg-zinc-950/85"
+        x-data="{ showPlay: false }"
+    >
+        <div
+            class="swiper"
+            x-data
+            x-init="
+                window.initHandSwiper?.($el, {
+                    onCenterChanged: (cardId) => $wire.selectCard(cardId),
+                    onSwipeUpPlay: () => $wire.playSelected(),
+                });
+                $wire.on('hand-updated', () => window.initHandSwiper?.($el, {
+                    onCenterChanged: (cardId) => $wire.selectCard(cardId),
+                    onSwipeUpPlay: () => $wire.playSelected(),
+                }));
+            "
+        >
+            <div class="swiper-wrapper">
+                @foreach($hand as $card)
+                    <div class="swiper-slide" style="width: 74%;">
+                        <div class="relative">
+                            {{-- Card image --}}
+                            <div class="rounded-2xl overflow-hidden border border-zinc-700 bg-zinc-900">
+                                <img
+                                    src="{{ $card['img'] }}"
+                                    alt=""
+                                    class="w-full h-[260px] object-cover select-none"
+                                    draggable="false"
+                                    data-card-id="{{ $card['id'] }}"
+                                >
+                            </div>
+
+                            {{-- Play button appears for centered card --}}
+                            <div class="mt-2">
+                                <button
+                                    class="w-full px-3 py-2 rounded-xl border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-sm"
+                                    wire:click="playSelected"
+                                >
+                                    Play
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                @endforeach
+            </div>
+        </div>
+
+        {{-- Optional: show which card is “selected” --}}
+        <div class="mt-2 text-xs text-zinc-500">
+            Selected: <span class="text-zinc-300">{{ $selectedCardId ?? '—' }}</span>
+        </div>
+    </div>
+
+    {{-- Planet modal (simple for now; swap to Flux Sheet/Modal) --}}
+    @if($showPlanetModal)
+        <div class="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+            <div class="w-full max-w-md rounded-2xl border border-zinc-700 bg-zinc-950 p-4">
+                <div class="flex items-center justify-between">
+                    <div class="font-semibold">Planet Card</div>
+                    <button class="text-sm text-zinc-400 hover:text-zinc-200" wire:click="closePlanet">Close</button>
+                </div>
+
+                <div class="mt-3 rounded-xl border border-zinc-800 bg-zinc-900/40 h-[380px] flex items-center justify-center text-zinc-500">
+                    Full planet card art goes here
+                </div>
+            </div>
+        </div>
+    @endif
+</div>
