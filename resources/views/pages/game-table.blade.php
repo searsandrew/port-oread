@@ -123,7 +123,7 @@ new class extends Component
 @endphp
 
 <div
-    class="h-dvh w-full bg-zinc-950 text-zinc-100 overflow-hidden"
+    class="h-dvh w-full bg-zinc-950 text-zinc-100 overflow-hidden flex flex-col"
     x-data="portOreadTable()"
     x-init="init()"
     x-on:hand-updated.window="refreshHandSwiper()"
@@ -132,7 +132,7 @@ new class extends Component
     x-on:battle-accepted.window="nudgePlanet($event.detail.planetMove)"
 >
     {{-- HUD --}}
-    <div class="px-4 pt-4">
+    <div class="px-4 pt-4 shrink-0">
         <div class="flex items-center justify-between">
             <div class="space-y-1">
                 <div class="text-xs text-zinc-400">Score</div>
@@ -147,7 +147,7 @@ new class extends Component
     </div>
 
     {{-- Planet Stage (Swiper) --}}
-    <div class="px-4 pt-4">
+    <div class="px-4 pt-4 shrink-0">
         <div
             class="rounded-3xl border border-white/10 bg-white/5 p-4 transition-transform duration-300 ease-out"
             :class="planetNudge === 'down' ? 'translate-y-6' : (planetNudge === 'up' ? '-translate-y-6' : '')"
@@ -221,8 +221,11 @@ new class extends Component
         </div>
     </div>
 
+    {{-- Spacer to push hand to bottom --}}
+    <div class="flex-1"></div>
+
     {{-- Hand Carousel --}}
-    <div class="px-4 pt-6" :class="$wire.showCardMenu ? 'invisible' : ''">
+    <div class="px-4 pb-8 pt-6 shrink-0">
         <div class="text-sm text-zinc-400 mb-2">Your hand</div>
 
         <div class="relative">
@@ -253,19 +256,15 @@ new class extends Component
                 </div>
             </div>
 
-            <div class="pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-zinc-950 to-transparent"></div>
-            <div class="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-zinc-950 to-transparent"></div>
-        </div>
-
-        <div class="mt-2 text-xs text-zinc-500">
-            Click peeking cards to center them. Click the centered card to play.
+            <div class="pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-zinc-950 to-transparent z-10"></div>
+            <div class="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-zinc-950 to-transparent z-10"></div>
         </div>
     </div>
 
     {{-- Select / Play Modal --}}
     <div x-cloak x-show="$wire.showCardMenu" class="fixed inset-0 z-40 flex flex-col justify-end">
         <div
-            class="absolute inset-0 bg-black/90 transition-opacity duration-300"
+            class="absolute inset-0 bg-black/60 transition-opacity duration-300"
             x-show="$wire.showCardMenu"
             x-transition:enter="ease-out duration-300"
             x-transition:enter-start="opacity-0"
@@ -277,7 +276,7 @@ new class extends Component
         ></div>
 
         <div
-            class="relative h-full flex flex-col"
+            class="relative flex flex-col"
             x-show="$wire.showCardMenu"
             x-transition:enter="transform transition ease-out duration-300"
             x-transition:enter-start="translate-y-full"
@@ -288,35 +287,35 @@ new class extends Component
         >
             @php($selected = collect($hand)->firstWhere('id', $selectedCardId))
 
-            <div class="flex-1 flex items-center justify-center p-8">
-                @if($selected)
-                    <div class="max-w-xs w-full">
-                        <img src="{{ $selected['img'] }}" class="w-full rounded-3xl border border-white/20 shadow-2xl" draggable="false" />
+            @if($selected)
+                <div class="px-4">
+                    <img src="{{ $selected['img'] }}" class="w-full rounded-t-3xl border-t border-x border-white/20 shadow-2xl" draggable="false" />
+                </div>
 
-                        @if(($selected['isMerc'] ?? false) === true)
-                            <div class="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
-                                <div class="text-xs text-zinc-400 uppercase tracking-widest">Mercenary</div>
-                                <div class="mt-1 text-lg font-bold">
-                                    {{ $selected['merc']['name'] ?? 'Mercenary' }}
-                                </div>
-                                <div class="mt-2 text-sm text-zinc-300 leading-relaxed">
-                                    <span class="font-bold text-white">{{ $mercAbilityTitle($selected['merc']['ability_type'] ?? null) }}:</span>
-                                    {!! $mercAbilityDescription($selected['merc']['ability_type'] ?? null, $selected['merc']['params'] ?? []) !!}
-                                </div>
+                <div class="bg-zinc-950 border-t border-white/10 safe-area-bottom">
+                    @if(($selected['isMerc'] ?? false) === true)
+                        <div class="p-4 text-center border-b border-white/5 bg-white/5">
+                            <div class="text-[10px] text-zinc-400 uppercase tracking-widest">Mercenary</div>
+                            <div class="mt-1 text-sm font-bold">
+                                {{ $selected['merc']['name'] ?? 'Mercenary' }}
                             </div>
-                        @endif
-                    </div>
-                @endif
-            </div>
+                            <div class="mt-1 text-xs text-zinc-300 leading-relaxed">
+                                <span class="font-bold text-white">{{ $mercAbilityTitle($selected['merc']['ability_type'] ?? null) }}:</span>
+                                {!! $mercAbilityDescription($selected['merc']['ability_type'] ?? null, $selected['merc']['params'] ?? []) !!}
+                            </div>
+                        </div>
+                    @endif
 
-            <div class="grid grid-cols-2 bg-zinc-950 border-t border-white/10 safe-area-bottom">
-                <button class="py-8 text-lg font-bold hover:bg-white/5 active:bg-white/10 transition-colors" wire:click="playSelected">
-                    PLAY
-                </button>
-                <button class="py-8 text-lg font-medium text-zinc-400 border-l border-white/10 hover:bg-white/5 active:bg-white/10 transition-colors" wire:click="closeCardMenu">
-                    CANCEL
-                </button>
-            </div>
+                    <div class="grid grid-cols-2">
+                        <button class="py-6 text-lg font-bold hover:bg-white/5 active:bg-white/10 transition-colors" wire:click="playSelected">
+                            PLAY
+                        </button>
+                        <button class="py-6 text-lg font-medium text-zinc-400 border-l border-white/10 hover:bg-white/5 active:bg-white/10 transition-colors" wire:click="closeCardMenu">
+                            CANCEL
+                        </button>
+                    </div>
+                </div>
+            @endif
         </div>
     </div>
 
