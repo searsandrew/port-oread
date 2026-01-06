@@ -16,6 +16,9 @@ new class extends Component
 
     public bool $showCardMenu = false;
 
+    public bool $gameOver = false;
+    public ?string $endReason = null;
+
     public function mount(GameService $game): void
     {
         $this->sessionId ??= (string) Str::uuid();
@@ -30,6 +33,9 @@ new class extends Component
 
         $this->selectedCardId = $snapshot['selectedCardId']
             ?? ($this->hand[0]['id'] ?? null);
+
+        $this->gameOver = (bool) ($snapshot['gameOver'] ?? false);
+        $this->endReason = $snapshot['endReason'] ?? null;
     }
 
     public function openCardMenu(string $cardId): void
@@ -41,7 +47,6 @@ new class extends Component
     public function closeCardMenu(): void
     {
         $this->showCardMenu = false;
-        // Alpine will restore swiper position on re-render
         $this->dispatch('modal-closed');
     }
 
@@ -51,6 +56,7 @@ new class extends Component
 
         $result = $game->playCard($this->sessionId, $this->playerId, $this->selectedCardId);
 
+        // fire effects first; overlay is wire:ignore
         $effects = $result['effects'] ?? [];
         if (!empty($effects)) {
             $this->dispatch('game-effects', effects: $effects);
@@ -64,6 +70,18 @@ new class extends Component
 
         $this->dispatch('hand-updated');
         $this->dispatch('planets-updated');
+    }
+
+    public function newGame(GameService $game): void
+    {
+        $this->sessionId = (string) Str::uuid();
+        $this->applySnapshot($game->snapshot($this->sessionId));
+
+        $this->showCardMenu = false;
+
+        $this->dispatch('hand-updated');
+        $this->dispatch('planets-updated');
+        $this->dispatch('modal-closed');
     }
 };
 ?>
@@ -95,6 +113,13 @@ new class extends Component
         default
             => 'No description available.',
     };
+
+    $endReasonLabel = fn (?string $reason) => match ($reason) {
+        'normal' => 'Normal end (hands empty)',
+        'ships_exhausted_planets_remaining' => 'Ships exhausted (planets remain)',
+        'player_out_of_cards_early' => 'Player out of cards early',
+        default => $reason ? str($reason)->headline() : 'Game over',
+    };
 @endphp
 
 <div
@@ -104,6 +129,7 @@ new class extends Component
     x-on:hand-updated.window="refreshHandSwiper()"
     x-on:planets-updated.window="refreshPlanetSwiper()"
     x-on:modal-closed.window="restoreHandIndexSoon()"
+    x-on:battle-accepted.window="nudgePlanet($event.detail.planetMove)"
 >
     {{-- HUD --}}
     <div class="px-4 pt-4">
@@ -122,15 +148,33 @@ new class extends Component
 
     {{-- Planet Stage (Swiper) --}}
     <div class="px-4 pt-4">
-        <div class="rounded-3xl border border-white/10 bg-white/5 p-4">
+        <div
+            class="rounded-3xl border border-white/10 bg-white/5 p-4 transition-transform duration-300 ease-out"
+            :class="planetNudge === 'down' ? 'translate-y-6' : (planetNudge === 'up' ? '-translate-y-6' : '')"
+        >
             <div class="flex items-center justify-between">
                 <div class="text-sm text-zinc-400">Planet(s) in the pot</div>
-                <div class="text-xs text-zinc-500">
-                    @if(count($planets) > 1)
-                        Swipe • {{ count($planets) }} in pot
-                    @else
-                        Single planet
-                    @endif
+
+                <div class="flex items-center gap-2">
+                    {{-- desktop-friendly nav --}}
+                    <button
+                        type="button"
+                        class="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-zinc-200"
+                        x-ref="planetPrev"
+                        x-on:click="planetSwiper?.slidePrev()"
+                        :disabled="!planetSwiper || planetSwiper.slides.length <= 1"
+                    >
+                        ◀
+                    </button>
+                    <button
+                        type="button"
+                        class="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-zinc-200"
+                        x-ref="planetNext"
+                        x-on:click="planetSwiper?.slideNext()"
+                        :disabled="!planetSwiper || planetSwiper.slides.length <= 1"
+                    >
+                        ▶
+                    </button>
                 </div>
             </div>
 
@@ -163,13 +207,15 @@ new class extends Component
                             </div>
                         @endforeach
                     </div>
+
+                    {{-- pagination bullets (clickable) --}}
+                    <div class="mt-2 flex justify-center" x-ref="planetPagination"></div>
                 </div>
             </div>
 
-            {{-- tiny swipe hint --}}
             @if(count($planets) > 1)
                 <div class="mt-2 text-xs text-zinc-500">
-                    Pot details matter for Corporations — swipe to inspect each planet.
+                    Tip: on desktop you can use ◀ ▶, bullet dots, or arrow keys.
                 </div>
             @endif
         </div>
@@ -219,7 +265,7 @@ new class extends Component
         </div>
     </div>
 
-    {{-- Select / Play Modal (no separate Info modal) --}}
+    {{-- Select / Play Modal --}}
     <div x-cloak x-show="$wire.showCardMenu" class="fixed inset-0 z-40">
         <div class="absolute inset-0 bg-black/70" x-on:click="$wire.closeCardMenu()"></div>
 
@@ -261,7 +307,35 @@ new class extends Component
         </div>
     </div>
 
-    {{-- Battle Overlay using Alpine STORE (so Livewire can't break scope) --}}
+    {{-- Game Over --}}
+    <div x-cloak x-show="$wire.gameOver" class="fixed inset-0 z-50">
+        <div class="absolute inset-0 bg-black/80"></div>
+
+        <div class="absolute inset-0 grid place-items-center p-4">
+            <div class="w-full max-w-sm rounded-3xl border border-white/10 bg-zinc-950 p-4">
+                <div class="text-lg font-semibold">Game Over</div>
+                <div class="mt-1 text-sm text-zinc-300">
+                    {{ $endReasonLabel($endReason) }}
+                </div>
+
+                <div class="mt-4 rounded-2xl border border-white/10 bg-white/5 p-3">
+                    <div class="text-xs text-zinc-400">Your VP</div>
+                    <div class="text-2xl font-semibold">{{ $hud['score'] ?? 0 }}</div>
+                </div>
+
+                <div class="mt-4 grid grid-cols-2 gap-2">
+                    <button class="rounded-2xl bg-white/10 px-3 py-3 text-sm" wire:click="newGame">
+                        New Game
+                    </button>
+                    <button class="rounded-2xl bg-white/5 px-3 py-3 text-sm" x-on:click="$wire.gameOver = false">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{-- Battle Overlay (Accept-based, blocks input) --}}
     <div
         wire:ignore
         class="fixed inset-0 z-60"
@@ -291,6 +365,16 @@ new class extends Component
                     <span x-show="$store.battle.outcome === 'loss'">You lose the battle.</span>
                     <span x-show="$store.battle.outcome === 'tie'">Tie — the pot escalates.</span>
                 </div>
+
+                <div class="mt-4 flex justify-center">
+                    <button
+                        type="button"
+                        class="rounded-2xl bg-white/10 px-4 py-3 text-sm"
+                        x-on:click="$store.battle.accept()"
+                    >
+                        Accept
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -303,10 +387,19 @@ new class extends Component
             planetSwiper: null,
             handIndex: 0,
 
+            // used for win/loss planet nudge
+            planetNudge: null,
+
             init() {
                 this.ensureBattleStore();
                 this.initHandSwiper();
                 this.initPlanetSwiper();
+            },
+
+            nudgePlanet(move) {
+                if (!move || move === 'none') return;
+                this.planetNudge = move;
+                setTimeout(() => this.planetNudge = null, 350);
             },
 
             ensureBattleStore() {
@@ -315,6 +408,8 @@ new class extends Component
                     playerImg: '',
                     enemyImg: '',
                     outcome: 'tie',
+                    planetMove: 'none',
+
                     run(effects) {
                         if (!effects || !effects.length) return;
                         const e = effects.find(x => x.type === 'battle_resolve');
@@ -323,9 +418,20 @@ new class extends Component
                         this.playerImg = e.player?.img || '';
                         this.enemyImg  = e.enemy?.img  || '';
                         this.outcome   = e.outcome || 'tie';
+                        this.planetMove = e.planetMove || 'none';
 
+                        // SINGLE PLAYER: stay up until user accepts
                         this.visible = true;
-                        setTimeout(() => this.visible = false, 900);
+                    },
+
+                    accept() {
+                        const move = this.planetMove || 'none';
+                        this.visible = false;
+                        this.planetMove = 'none';
+
+                        window.dispatchEvent(new CustomEvent('battle-accepted', {
+                            detail: { planetMove: move }
+                        }));
                     }
                 });
 
@@ -336,7 +442,6 @@ new class extends Component
                     }
                 };
 
-                // works whether Alpine already started or not
                 setStore();
                 document.addEventListener('alpine:init', setStore);
             },
@@ -348,16 +453,13 @@ new class extends Component
                     slidesPerView: 1.35,
                     centeredSlides: true,
                     spaceBetween: 14,
-                    // IMPORTANT: do NOT use slideToClickedSlide — it races our click behavior
                 });
 
-                // keep selectedCardId synced to active slide
                 this.handSwiper.on('slideChange', () => {
                     this.handIndex = this.handSwiper.activeIndex;
                     this.syncSelectedToActiveSlide();
                 });
 
-                // initial sync
                 this.handIndex = this.handSwiper.activeIndex || 0;
                 this.syncSelectedToActiveSlide();
             },
@@ -368,6 +470,16 @@ new class extends Component
                 this.planetSwiper = new Swiper(this.$refs.planetSwiper, {
                     slidesPerView: 1,
                     spaceBetween: 10,
+                    grabCursor: true,
+                    simulateTouch: true,
+                    keyboard: { enabled: true },
+                    mousewheel: { forceToAxis: true },
+
+                    // clickable dots
+                    pagination: {
+                        el: this.$refs.planetPagination,
+                        clickable: true,
+                    },
                 });
             },
 
@@ -388,9 +500,13 @@ new class extends Component
 
             refreshPlanetSwiper() {
                 this.$nextTick(() => {
+                    const current = this.planetSwiper ? this.planetSwiper.activeIndex : 0;
+
                     if (this.planetSwiper) {
                         this.planetSwiper.update();
-                        this.planetSwiper.slideTo(0, 0);
+                        // keep index if still valid; else clamp
+                        const max = Math.max(0, this.planetSwiper.slides.length - 1);
+                        this.planetSwiper.slideTo(Math.min(current, max), 0);
                     } else {
                         this.initPlanetSwiper();
                     }
@@ -398,7 +514,6 @@ new class extends Component
             },
 
             restoreHandIndexSoon() {
-                // modal close triggers a Livewire morph; restore after the DOM settles
                 this.$nextTick(() => {
                     if (!this.handSwiper) return;
                     this.handSwiper.update();
@@ -414,15 +529,14 @@ new class extends Component
 
                 const active = this.handSwiper.activeIndex;
 
-                // Peeking card click => center only
+                // peeking click centers only
                 if (index !== active) {
                     this.handIndex = index;
                     this.handSwiper.slideTo(index);
-                    // do NOT open modal
                     return;
                 }
 
-                // Center card click => open modal
+                // center click opens modal
                 this.$wire.openCardMenu(cardId);
             },
 
