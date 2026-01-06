@@ -263,23 +263,44 @@ new class extends Component
     </div>
 
     {{-- Select / Play Modal --}}
-    <div x-cloak x-show="$wire.showCardMenu" class="fixed inset-0 z-40">
-        <div class="absolute inset-0 bg-black/70" x-on:click="$wire.closeCardMenu()"></div>
+    <div x-cloak x-show="$wire.showCardMenu" class="fixed inset-0 z-40 flex items-end justify-center">
+        <div
+            class="absolute inset-0 bg-black/70 transition-opacity duration-300"
+            x-show="$wire.showCardMenu"
+            x-transition:enter="ease-out duration-300"
+            x-transition:enter-start="opacity-0"
+            x-transition:enter-end="opacity-100"
+            x-transition:leave="ease-in duration-200"
+            x-transition:leave-start="opacity-100"
+            x-transition:leave-end="opacity-0"
+            x-on:click="$wire.closeCardMenu()"
+        ></div>
 
-        <div class="absolute inset-0 grid place-items-center p-4">
-            <div class="w-full max-w-sm rounded-3xl border border-white/10 bg-zinc-950 p-4">
+        <div
+            class="relative w-full max-w-sm px-4 pb-8"
+            x-show="$wire.showCardMenu"
+            x-transition:enter="transform transition ease-out duration-300"
+            x-transition:enter-start="translate-y-full"
+            x-transition:enter-end="translate-y-0"
+            x-transition:leave="transform transition ease-in duration-200"
+            x-transition:leave-start="translate-y-0"
+            x-transition:leave-end="translate-y-full"
+        >
+            <div class="rounded-3xl border border-white/10 bg-zinc-950 p-4 shadow-2xl">
                 @php($selected = collect($hand)->firstWhere('id', $selectedCardId))
 
                 <div class="flex items-center justify-between">
                     <div class="text-sm font-semibold">Selected Card</div>
-                    <button class="text-zinc-400" wire:click="closeCardMenu">✕</button>
+                    <button class="text-zinc-400 p-2 -mr-2" wire:click="closeCardMenu">✕</button>
                 </div>
 
                 @if($selected)
-                    <img src="{{ $selected['img'] }}" class="mt-3 w-full rounded-2xl border border-white/10" draggable="false" />
+                    <div class="mt-3 flex justify-center">
+                        <img src="{{ $selected['img'] }}" class="w-48 rounded-2xl border border-white/10 shadow-lg" draggable="false" />
+                    </div>
 
                     @if(($selected['isMerc'] ?? false) === true)
-                        <div class="mt-3 rounded-2xl border border-white/10 bg-white/5 p-3">
+                        <div class="mt-3 rounded-2xl border border-white/10 bg-white/5 p-3 text-left">
                             <div class="text-xs text-zinc-400">Mercenary</div>
                             <div class="mt-1 text-sm font-semibold">
                                 {{ $selected['merc']['name'] ?? 'Mercenary' }}
@@ -293,10 +314,10 @@ new class extends Component
                 @endif
 
                 <div class="mt-4 grid grid-cols-2 gap-2">
-                    <button class="rounded-2xl bg-white/10 px-3 py-3 text-sm" wire:click="playSelected">
-                        Play
+                    <button class="rounded-2xl bg-white/10 px-3 py-4 text-sm font-semibold active:scale-95 transition-transform" wire:click="playSelected">
+                        Play Card
                     </button>
-                    <button class="rounded-2xl bg-white/5 px-3 py-3 text-sm" wire:click="closeCardMenu">
+                    <button class="rounded-2xl bg-white/5 px-3 py-4 text-sm active:scale-95 transition-transform" wire:click="closeCardMenu">
                         Cancel
                     </button>
                 </div>
