@@ -222,7 +222,7 @@ new class extends Component
     </div>
 
     {{-- Hand Carousel --}}
-    <div class="px-4 pt-6">
+    <div class="px-4 pt-6" :class="$wire.showCardMenu ? 'invisible' : ''">
         <div class="text-sm text-zinc-400 mb-2">Your hand</div>
 
         <div class="relative">
@@ -263,9 +263,9 @@ new class extends Component
     </div>
 
     {{-- Select / Play Modal --}}
-    <div x-cloak x-show="$wire.showCardMenu" class="fixed inset-0 z-40 flex items-end justify-center">
+    <div x-cloak x-show="$wire.showCardMenu" class="fixed inset-0 z-40 flex flex-col justify-end">
         <div
-            class="absolute inset-0 bg-black/70 transition-opacity duration-300"
+            class="absolute inset-0 bg-black/90 transition-opacity duration-300"
             x-show="$wire.showCardMenu"
             x-transition:enter="ease-out duration-300"
             x-transition:enter-start="opacity-0"
@@ -277,7 +277,7 @@ new class extends Component
         ></div>
 
         <div
-            class="relative w-full max-w-sm px-4 pb-8"
+            class="relative h-full flex flex-col"
             x-show="$wire.showCardMenu"
             x-transition:enter="transform transition ease-out duration-300"
             x-transition:enter-start="translate-y-full"
@@ -286,41 +286,36 @@ new class extends Component
             x-transition:leave-start="translate-y-0"
             x-transition:leave-end="translate-y-full"
         >
-            <div class="rounded-3xl border border-white/10 bg-zinc-950 p-4 shadow-2xl">
-                @php($selected = collect($hand)->firstWhere('id', $selectedCardId))
+            @php($selected = collect($hand)->firstWhere('id', $selectedCardId))
 
-                <div class="flex items-center justify-between">
-                    <div class="text-sm font-semibold">Selected Card</div>
-                    <button class="text-zinc-400 p-2 -mr-2" wire:click="closeCardMenu">✕</button>
-                </div>
-
+            <div class="flex-1 flex items-center justify-center p-8">
                 @if($selected)
-                    <div class="mt-3 flex justify-center">
-                        <img src="{{ $selected['img'] }}" class="w-48 rounded-2xl border border-white/10 shadow-lg" draggable="false" />
+                    <div class="max-w-xs w-full">
+                        <img src="{{ $selected['img'] }}" class="w-full rounded-3xl border border-white/20 shadow-2xl" draggable="false" />
+
+                        @if(($selected['isMerc'] ?? false) === true)
+                            <div class="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
+                                <div class="text-xs text-zinc-400 uppercase tracking-widest">Mercenary</div>
+                                <div class="mt-1 text-lg font-bold">
+                                    {{ $selected['merc']['name'] ?? 'Mercenary' }}
+                                </div>
+                                <div class="mt-2 text-sm text-zinc-300 leading-relaxed">
+                                    <span class="font-bold text-white">{{ $mercAbilityTitle($selected['merc']['ability_type'] ?? null) }}:</span>
+                                    {!! $mercAbilityDescription($selected['merc']['ability_type'] ?? null, $selected['merc']['params'] ?? []) !!}
+                                </div>
+                            </div>
+                        @endif
                     </div>
-
-                    @if(($selected['isMerc'] ?? false) === true)
-                        <div class="mt-3 rounded-2xl border border-white/10 bg-white/5 p-3 text-left">
-                            <div class="text-xs text-zinc-400">Mercenary</div>
-                            <div class="mt-1 text-sm font-semibold">
-                                {{ $selected['merc']['name'] ?? 'Mercenary' }}
-                            </div>
-                            <div class="mt-2 text-sm text-zinc-300">
-                                <span class="font-semibold">{{ $mercAbilityTitle($selected['merc']['ability_type'] ?? null) }}:</span>
-                                {!! $mercAbilityDescription($selected['merc']['ability_type'] ?? null, $selected['merc']['params'] ?? []) !!}
-                            </div>
-                        </div>
-                    @endif
                 @endif
+            </div>
 
-                <div class="mt-4 grid grid-cols-2 gap-2">
-                    <button class="rounded-2xl bg-white/10 px-3 py-4 text-sm font-semibold active:scale-95 transition-transform" wire:click="playSelected">
-                        Play Card
-                    </button>
-                    <button class="rounded-2xl bg-white/5 px-3 py-4 text-sm active:scale-95 transition-transform" wire:click="closeCardMenu">
-                        Cancel
-                    </button>
-                </div>
+            <div class="grid grid-cols-2 bg-zinc-950 border-t border-white/10 safe-area-bottom">
+                <button class="py-8 text-lg font-bold hover:bg-white/5 active:bg-white/10 transition-colors" wire:click="playSelected">
+                    PLAY
+                </button>
+                <button class="py-8 text-lg font-medium text-zinc-400 border-l border-white/10 hover:bg-white/5 active:bg-white/10 transition-colors" wire:click="closeCardMenu">
+                    CANCEL
+                </button>
             </div>
         </div>
     </div>
