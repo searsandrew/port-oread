@@ -230,10 +230,7 @@ new class extends Component
                 <div class="swiper-wrapper">
                     @foreach($hand as $card)
                         <div class="swiper-slide" data-card-id="{{ $card['id'] }}" wire:key="hand-{{ $card['id'] }}">
-                            <div
-                                class="select-none"
-                                x-on:click="handleHandClick({{ $loop->index }}, '{{ $card['id'] }}')"
-                            >
+                            <div class="select-none">
                                 <div class="relative">
                                     <img
                                         src="{{ $card['img'] }}"
@@ -453,11 +450,38 @@ new class extends Component
                     slidesPerView: 1.35,
                     centeredSlides: true,
                     spaceBetween: 14,
+                    // IMPORTANT: we handle click ourselves, so Swiper doesn't auto-slide then we open modal
+                    slideToClickedSlide: false,
                 });
 
                 this.handSwiper.on('slideChange', () => {
                     this.handIndex = this.handSwiper.activeIndex;
                     this.syncSelectedToActiveSlide();
+                });
+
+                // ✅ Click behavior:
+                // - click peeker => center it
+                // - click active => open modal
+                this.handSwiper.on('click', (swiper) => {
+                    const idx = swiper.clickedIndex;
+                    if (idx === null || idx === undefined) return;
+
+                    const slide = swiper.slides[idx];
+                    const cardId = slide?.dataset?.cardId;
+                    if (!cardId) return;
+
+                    const active = swiper.activeIndex;
+
+                    // peeker click centers only
+                    if (idx !== active) {
+                        this.handIndex = idx;
+                        swiper.slideTo(idx);
+                        return;
+                    }
+
+                    // active click opens modal
+                    this.handIndex = active;
+                    this.$wire.openCardMenu(cardId);
                 });
 
                 this.handIndex = this.handSwiper.activeIndex || 0;
@@ -521,6 +545,7 @@ new class extends Component
                 });
             },
 
+            // kept for now (no longer used by slides)
             handleHandClick(index, cardId) {
                 if (!this.handSwiper) {
                     this.$wire.openCardMenu(cardId);
@@ -529,14 +554,12 @@ new class extends Component
 
                 const active = this.handSwiper.activeIndex;
 
-                // peeking click centers only
                 if (index !== active) {
                     this.handIndex = index;
                     this.handSwiper.slideTo(index);
                     return;
                 }
 
-                // center click opens modal
                 this.$wire.openCardMenu(cardId);
             },
 

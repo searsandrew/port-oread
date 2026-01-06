@@ -1,4 +1,8 @@
 @import 'tailwindcss';
+@import 'swiper/css';
+@import 'swiper/css/pagination';
+@import 'swiper/css/mousewheel';
+@import 'swiper/css/keyboard';
 @import '../../vendor/livewire/flux/dist/flux.css';
 @import "./cards.css";
 
