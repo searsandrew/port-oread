@@ -20,9 +20,7 @@ new class extends Component
     public function mount(GameService $game): void
     {
         $this->sessionId ??= (string) Str::uuid();
-
-        $snapshot = $game->snapshot($this->sessionId);
-        $this->applySnapshot($snapshot);
+        $this->applySnapshot($game->snapshot($this->sessionId));
     }
 
     private function applySnapshot(array $snapshot): void
@@ -33,11 +31,6 @@ new class extends Component
 
         $this->selectedCardId = $snapshot['selectedCardId']
             ?? ($this->hand[0]['id'] ?? null);
-    }
-
-    public function selectCard(string $cardId): void
-    {
-        $this->selectedCardId = $cardId;
     }
 
     public function openCardMenu(string $cardId): void
@@ -64,9 +57,7 @@ new class extends Component
 
     public function playSelected(GameService $game): void
     {
-        if (!$this->selectedCardId) {
-            return;
-        }
+        if (!$this->selectedCardId) return;
 
         $result = $game->playCard($this->sessionId, $this->playerId, $this->selectedCardId);
 
@@ -81,7 +72,6 @@ new class extends Component
 
         $this->showCardMenu = false;
 
-        // Let Alpine re-init/update Swiper after DOM changes
         $this->dispatch('hand-updated');
         $this->dispatch('planets-updated');
     }
@@ -89,44 +79,39 @@ new class extends Component
 ?>
 
 @php
-    $mercAbilityTitle = function (?string $type): string {
-        return match ($type) {
-            'overpower_fifteen' => 'Overpower Fifteen',
-            'reveal_opponents_corp' => 'Intel Leak',
-            'win_all_ties' => 'Tie Breaker',
-            'return_once' => 'One More Run',
-            'discard_planet_draw_new' => 'Scorched Contract',
-            'peek_next_planet' => 'Recon Scan',
-            default => 'Mercenary Ability',
-        };
+    $mercAbilityTitle = fn (?string $type) => match ($type) {
+        'overpower_fifteen' => 'Overpower Fifteen',
+        'reveal_opponents_corp' => 'Intel Leak',
+        'win_all_ties' => 'Tie Breaker',
+        'return_once' => 'One More Run',
+        'discard_planet_draw_new' => 'Scorched Contract',
+        'peek_next_planet' => 'Recon Scan',
+        default => 'Mercenary Ability',
     };
 
-    $mercAbilityDescription = function (?string $type, array $params = []): string {
-        return match ($type) {
-            'overpower_fifteen'
-                => 'When played: if the opponent played <span class="font-semibold">15</span>, treat your strength as <span class="font-semibold">16</span> for this battle.',
-            'reveal_opponents_corp'
-                => 'When played: reveal the opponent’s Corporation.',
-            'win_all_ties'
-                => 'When played: if this battle would be a tie, you win instead.',
-            'return_once'
-                => 'After this battle: return this card to your hand <span class="font-semibold">once</span>.',
-            'discard_planet_draw_new'
-                => 'When played: discard the current planet and reveal a new one into the pot.',
-            'peek_next_planet'
-                => 'When played: look at the next planet in the deck.',
-            default
-                => 'No description available.',
-        };
+    $mercAbilityDescription = fn (?string $type, array $params = []) => match ($type) {
+        'overpower_fifteen'
+            => 'When played: if the opponent played <span class="font-semibold">15</span>, treat your strength as <span class="font-semibold">16</span> for this battle.',
+        'reveal_opponents_corp'
+            => 'When played: reveal the opponent’s Corporation.',
+        'win_all_ties'
+            => 'When played: if this battle would be a tie, you win instead.',
+        'return_once'
+            => 'After this battle: return this card to your hand <span class="font-semibold">once</span>.',
+        'discard_planet_draw_new'
+            => 'When played: discard the current planet and reveal a new one into the pot.',
+        'peek_next_planet'
+            => 'When played: look at the next planet in the deck.',
+        default
+            => 'No description available.',
     };
 @endphp
 
 <div
-    class="h-dvh w-full bg-zinc-950 text-zinc-100"
+    class="h-dvh w-full bg-zinc-950 text-zinc-100 overflow-hidden"
     x-data="portOreadTable()"
     x-init="init()"
     x-on:hand-updated.window="refreshHandSwiper()"
-    x-on:planets-updated.window="refreshPlanetSwiper()"
 >
     {{-- HUD --}}
     <div class="px-4 pt-4">
@@ -147,21 +132,21 @@ new class extends Component
     <div class="px-4 pt-4">
         <div class="rounded-3xl border border-white/10 bg-white/5 p-4">
             <div class="flex items-start justify-between gap-4">
-                <div>
-                    <div class="text-sm text-zinc-400">Planet in the pot</div>
-                    <div class="mt-1 text-lg font-semibold">
+                <div class="min-w-0">
+                    <div class="text-sm text-zinc-400">Planet up for grabs</div>
+                    <div class="mt-1 text-lg font-semibold truncate">
                         {{ ($planets[0]['name'] ?? '—') }}
                     </div>
-                    <div class="mt-1 text-sm text-zinc-300">
+                    <div class="mt-1 text-sm text-zinc-300 line-clamp-2">
                         {{ ($planets[0]['flavor'] ?? '') }}
                     </div>
                 </div>
 
-                <div class="flex gap-2">
-                    <div class="h-10 w-10 rounded-full border border-white/10 bg-white/5 grid place-items-center text-sm">
+                <div class="flex gap-2 shrink-0">
+                    <div class="h-10 w-10 rounded-full border border-white/10 bg-white/5 grid place-items-center text-xs">
                         {{ ($planets[0]['type'] ?? '') }}
                     </div>
-                    <div class="h-10 w-10 rounded-full border border-white/10 bg-white/5 grid place-items-center text-sm">
+                    <div class="h-10 w-10 rounded-full border border-white/10 bg-white/5 grid place-items-center text-sm font-semibold">
                         {{ ($planets[0]['vp'] ?? 0) }}
                     </div>
                 </div>
@@ -169,14 +154,14 @@ new class extends Component
 
             @if(count($planets) > 1)
                 <div class="mt-3 text-xs text-zinc-400">
-                    Tie stack: swipe to view {{ count($planets) }} planets in the pot.
+                    Tie stack: {{ count($planets) }} planets in the pot.
                 </div>
             @endif
         </div>
     </div>
 
     {{-- Hand Carousel --}}
-    <div class="px-4 pt-4">
+    <div class="px-4 pt-6">
         <div class="text-sm text-zinc-400 mb-2">Your hand</div>
 
         <div class="relative">
@@ -186,9 +171,9 @@ new class extends Component
                         <div class="swiper-slide">
                             <div
                                 class="select-none"
-                                x-on:click="$wire.openCardMenu('{{ $card['id'] }}')"
-                                x-on:touchstart="touchStart($event)"
-                                x-on:touchend="touchEnd($event, '{{ $card['id'] }}')"
+                                x-on:click="handleCardClick({{ $loop->index }}, '{{ $card['id'] }}')"
+                                x-on:pointerdown="pointerStart($event)"
+                                x-on:pointerup="pointerEnd($event, '{{ $card['id'] }}', {{ $loop->index }})"
                             >
                                 <div class="relative">
                                     <img
@@ -197,7 +182,7 @@ new class extends Component
                                         draggable="false"
                                     />
 
-                                    {{-- Merc pip --}}
+                                    {{-- merc pip --}}
                                     @if(($card['isMerc'] ?? false) === true)
                                         <div class="absolute top-2 right-2 h-3 w-3 rounded-full border border-white/30 bg-white/20"></div>
                                     @endif
@@ -217,37 +202,37 @@ new class extends Component
         </div>
     </div>
 
-    {{-- Action Sheet --}}
+    {{-- Card Menu Dialog (centered, connected) --}}
     <div x-cloak x-show="$wire.showCardMenu" class="fixed inset-0 z-40">
-        <div class="absolute inset-0 bg-black/60" x-on:click="$wire.closeCardMenu()"></div>
+        <div class="absolute inset-0 bg-black/70" x-on:click="$wire.closeCardMenu()"></div>
 
-        <div class="absolute left-0 right-0 bottom-0 p-4">
-            <div class="rounded-3xl border border-white/10 bg-zinc-950 p-4">
+        <div class="absolute inset-0 grid place-items-center p-4">
+            <div class="w-full max-w-sm rounded-3xl border border-white/10 bg-zinc-950 p-4">
                 @php($selected = collect($hand)->firstWhere('id', $selectedCardId))
 
                 <div class="flex items-center justify-between">
-                    <div class="text-sm text-zinc-400">Selected</div>
-                    <div class="text-sm font-semibold">
-                        {{ $selected['id'] ?? '—' }}
-                    </div>
+                    <div class="text-sm font-semibold">Selected Card</div>
+                    <button class="text-zinc-400" wire:click="closeCardMenu">✕</button>
                 </div>
+
+                @if($selected)
+                    <img src="{{ $selected['img'] }}" class="mt-3 w-full rounded-2xl border border-white/10" draggable="false" />
+                @endif
 
                 <div class="mt-4 grid grid-cols-3 gap-2">
                     <button class="rounded-2xl bg-white/10 px-3 py-3 text-sm" wire:click="playSelected">
                         Play
                     </button>
-
                     <button class="rounded-2xl bg-white/5 px-3 py-3 text-sm" wire:click="closeCardMenu">
                         Cancel
                     </button>
-
                     <button class="rounded-2xl bg-white/5 px-3 py-3 text-sm" wire:click="openInfo">
                         Info
                     </button>
                 </div>
 
                 <div class="mt-2 text-xs text-zinc-500">
-                    Tip: swipe up on a card to play instantly.
+                    Swipe up on the active card to play instantly.
                 </div>
             </div>
         </div>
@@ -257,8 +242,8 @@ new class extends Component
     <div x-cloak x-show="$wire.showInfoModal" class="fixed inset-0 z-50">
         <div class="absolute inset-0 bg-black/70" x-on:click="$wire.closeInfo()"></div>
 
-        <div class="absolute inset-x-0 top-10 mx-auto max-w-md px-4">
-            <div class="rounded-3xl border border-white/10 bg-zinc-950 p-4">
+        <div class="absolute inset-0 grid place-items-center p-4">
+            <div class="w-full max-w-sm rounded-3xl border border-white/10 bg-zinc-950 p-4">
                 @php($selected = collect($hand)->firstWhere('id', $selectedCardId))
 
                 <div class="flex items-center justify-between">
@@ -267,35 +252,31 @@ new class extends Component
                 </div>
 
                 @if($selected)
-                    <div class="mt-4">
-                        <img src="{{ $selected['img'] }}" class="w-full rounded-2xl border border-white/10" draggable="false" />
+                    <img src="{{ $selected['img'] }}" class="mt-3 w-full rounded-2xl border border-white/10" draggable="false" />
 
-                        @if(($selected['isMerc'] ?? false) === true)
-                            <div class="mt-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs">
-                                <span class="h-2 w-2 rounded-full bg-white/40"></span>
-                                Mercenary
+                    @if(($selected['isMerc'] ?? false) === true)
+                        <div class="mt-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs">
+                            <span class="h-2 w-2 rounded-full bg-white/40"></span>
+                            Mercenary
+                        </div>
+
+                        <div class="mt-3">
+                            <div class="text-sm font-semibold">
+                                {{ $selected['merc']['name'] ?? 'Mercenary' }}
                             </div>
 
-                            <div class="mt-3">
+                            <div class="mt-2 rounded-2xl border border-white/10 bg-white/5 p-3">
                                 <div class="text-sm font-semibold">
-                                    {{ $selected['merc']['name'] ?? 'Mercenary' }}
+                                    {{ $mercAbilityTitle($selected['merc']['ability_type'] ?? null) }}
                                 </div>
-
-                                <div class="mt-2 rounded-2xl border border-white/10 bg-white/5 p-3">
-                                    <div class="text-sm font-semibold">
-                                        {{ $mercAbilityTitle($selected['merc']['ability_type'] ?? null) }}
-                                    </div>
-                                    <div class="mt-1 text-sm text-zinc-300">
-                                        {!! $mercAbilityDescription($selected['merc']['ability_type'] ?? null, $selected['merc']['params'] ?? []) !!}
-                                    </div>
+                                <div class="mt-1 text-sm text-zinc-300">
+                                    {!! $mercAbilityDescription($selected['merc']['ability_type'] ?? null, $selected['merc']['params'] ?? []) !!}
                                 </div>
                             </div>
-                        @else
-                            <div class="mt-3 text-sm text-zinc-300">
-                                Standard ship card.
-                            </div>
-                        @endif
-                    </div>
+                        </div>
+                    @else
+                        <div class="mt-3 text-sm text-zinc-300">Standard ship card.</div>
+                    @endif
                 @else
                     <div class="mt-4 text-sm text-zinc-400">No card selected.</div>
                 @endif
@@ -309,35 +290,37 @@ new class extends Component
         </div>
     </div>
 
-    {{-- Battle Overlay --}}
+    {{-- Battle Overlay (blocks input) --}}
     <div
         id="battle-overlay"
-        class="fixed inset-0 z-30 pointer-events-none"
+        class="fixed inset-0 z-60"
         x-data="battleOverlay()"
         x-on:game-effects.window="run($event.detail.effects)"
+        x-show="visible"
+        x-cloak
     >
-        <template x-if="visible">
-            <div class="absolute inset-0 grid place-items-center bg-black/70">
-                <div class="w-full max-w-md px-6">
-                    <div class="grid grid-cols-2 gap-4">
-                        <div class="relative">
-                            <img :src="playerImg" class="w-full rounded-2xl border border-white/10" />
-                            <div class="absolute inset-0 rounded-2xl" :class="outcome === 'win' ? 'ring-2 ring-white/60' : 'ring-0'"></div>
-                        </div>
-                        <div class="relative">
-                            <img :src="enemyImg" class="w-full rounded-2xl border border-white/10" />
-                            <div class="absolute inset-0 rounded-2xl" :class="outcome === 'loss' ? 'ring-2 ring-white/60' : 'ring-0'"></div>
-                        </div>
-                    </div>
+        <div class="absolute inset-0 bg-black/80"></div>
 
-                    <div class="mt-4 text-center text-sm text-zinc-200">
-                        <span x-show="outcome === 'win'">You win the battle.</span>
-                        <span x-show="outcome === 'loss'">You lose the battle.</span>
-                        <span x-show="outcome === 'tie'">Tie — the pot escalates.</span>
+        <div class="absolute inset-0 grid place-items-center">
+            <div class="w-full max-w-md px-6">
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="relative">
+                        <img :src="playerImg" class="w-full rounded-2xl border border-white/10" />
+                        <div class="absolute inset-0 rounded-2xl" :class="outcome === 'win' ? 'ring-2 ring-white/70' : 'ring-0'"></div>
+                    </div>
+                    <div class="relative">
+                        <img :src="enemyImg" class="w-full rounded-2xl border border-white/10" />
+                        <div class="absolute inset-0 rounded-2xl" :class="outcome === 'loss' ? 'ring-2 ring-white/70' : 'ring-0'"></div>
                     </div>
                 </div>
+
+                <div class="mt-4 text-center text-sm text-zinc-200">
+                    <span x-show="outcome === 'win'">You win the battle.</span>
+                    <span x-show="outcome === 'loss'">You lose the battle.</span>
+                    <span x-show="outcome === 'tie'">Tie — the pot escalates.</span>
+                </div>
             </div>
-        </template>
+        </div>
     </div>
 </div>
 
@@ -346,6 +329,8 @@ new class extends Component
         return {
             handSwiper: null,
             startY: null,
+            startX: null,
+            startIdx: null,
 
             init() {
                 this.initHandSwiper();
@@ -358,6 +343,7 @@ new class extends Component
                     slidesPerView: 1.35,
                     centeredSlides: true,
                     spaceBetween: 14,
+                    slideToClickedSlide: true,
                 });
             },
 
@@ -368,26 +354,55 @@ new class extends Component
                 });
             },
 
-            refreshPlanetSwiper() {},
+            // Click peeking card -> advance; click active -> open menu
+            handleCardClick(index, cardId) {
+                if (!this.handSwiper) {
+                    this.$wire.openCardMenu(cardId);
+                    return;
+                }
 
-            touchStart(e) {
-                const t = e.touches?.[0];
-                this.startY = t ? t.clientY : null;
+                const active = this.handSwiper.activeIndex;
+
+                if (index !== active) {
+                    this.handSwiper.slideTo(index);
+                    // do NOT open menu yet (this is the "advance" click)
+                    return;
+                }
+
+                // active card click opens menu
+                this.$wire.openCardMenu(cardId);
             },
 
-            touchEnd(e, cardId) {
-                const t = e.changedTouches?.[0];
-                if (!t || this.startY === null) return;
+            pointerStart(e) {
+                this.startY = e.clientY;
+                this.startX = e.clientX;
+                this.startIdx = this.handSwiper ? this.handSwiper.activeIndex : null;
+            },
 
-                const dy = t.clientY - this.startY;
+            pointerEnd(e, cardId, index) {
+                if (this.startY === null) return;
 
-                if (dy < -60) {
-                    this.$wire.selectedCardId = cardId;
-                    this.$wire.playSelected();
+                const dy = e.clientY - this.startY;
+                const dx = e.clientX - this.startX;
+
+                // If user is horizontally swiping, ignore vertical play gesture
+                if (Math.abs(dx) > Math.abs(dy)) {
+                    this.startY = null;
+                    return;
+                }
+
+                // swipe up threshold (desktop + mobile)
+                if (dy < -70) {
+                    // only allow swipe-up play on active card to avoid weirdness
+                    const active = this.handSwiper ? this.handSwiper.activeIndex : index;
+                    if (index === active) {
+                        this.$wire.selectedCardId = cardId;
+                        this.$wire.playSelected();
+                    }
                 }
 
                 this.startY = null;
-            }
+            },
         };
     }
 
@@ -409,7 +424,7 @@ new class extends Component
                 this.outcome = e.outcome || 'tie';
 
                 this.visible = true;
-                setTimeout(() => this.visible = false, 1100);
+                setTimeout(() => this.visible = false, 900);
             }
         };
     }
