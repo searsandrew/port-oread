@@ -90,3 +90,46 @@ select:focus[data-flux-control] {
         transform: scale(1.5);
     }
 }
+
+/* Shatter Effect */
+.shatter-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+.shatter-piece {
+    position: absolute;
+    inset: 0;
+    background-size: 100% 100%;
+    pointer-events: none;
+    transition: all 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.shattered .shatter-piece {
+    opacity: 0;
+    transform: translate(var(--tx), var(--ty)) rotate(var(--tr)) scale(0.5);
+    filter: blur(4px);
+}
+
+.shatter-container.shattered {
+    overflow: visible !important;
+}
+
+@keyframes winner-glow {
+    0%, 100% { box-shadow: 0 0 10px 2px rgba(255, 255, 255, 0.3); }
+    50% { box-shadow: 0 0 30px 10px rgba(255, 255, 255, 0.6); }
+}
+
+.winner-highlight {
+    animation: winner-glow 2s infinite;
+}
+
+@keyframes pot-pulse {
+    0%, 100% { transform: scale(1); color: inherit; }
+    50% { transform: scale(1.2); color: #fbbf24; }
+}
+
+.pot-escalate {
+    animation: pot-pulse 0.8s ease-out 3;
+}

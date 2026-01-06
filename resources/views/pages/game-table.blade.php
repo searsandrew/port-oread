@@ -132,7 +132,7 @@ new class extends Component
     x-on:battle-accepted.window="nudgePlanet($event.detail.planetMove)"
 >
     {{-- HUD --}}
-    <div class="px-4 pt-4 shrink-0">
+    <div class="px-4 pt-4 shrink-0 transition-opacity duration-300" :class="activeArea !== 'hand' && activeArea !== 'planets' ? 'opacity-50' : 'opacity-100'">
         <div class="flex items-center justify-between">
             <div class="space-y-1">
                 <div class="text-xs text-zinc-400">Score</div>
@@ -141,13 +141,22 @@ new class extends Component
 
             <div class="space-y-1 text-right">
                 <div class="text-xs text-zinc-400">Pot VP</div>
-                <div class="text-xl font-semibold">{{ $hud['pot_vp'] ?? 0 }}</div>
+                <div
+                    class="text-xl font-semibold transition-all duration-500"
+                    :class="$store.battle?.potEscalated ? 'pot-escalate text-amber-400' : ''"
+                >
+                    {{ $hud['pot_vp'] ?? 0 }}
+                </div>
             </div>
         </div>
     </div>
 
     {{-- Planet Stage (Swiper) --}}
-    <div class="px-4 pt-4 shrink-0">
+    <div
+        class="px-4 pt-4 shrink-0 transition-all duration-500"
+        :class="activeArea !== 'planets' ? 'opacity-40 grayscale-[0.5] scale-[0.98]' : 'opacity-100 scale-100'"
+        x-on:click="activeArea = 'planets'"
+    >
         <div
             class="rounded-3xl border border-white/10 bg-white/5 p-4 transition-transform duration-300 ease-out"
             :class="planetNudge === 'down' ? 'translate-y-6' : (planetNudge === 'up' ? '-translate-y-6' : '')"
@@ -225,7 +234,11 @@ new class extends Component
     <div class="flex-1"></div>
 
     {{-- Hand Carousel --}}
-    <div class="px-4 pb-8 pt-6 shrink-0">
+    <div
+        class="px-4 pb-8 pt-6 shrink-0 transition-all duration-500"
+        :class="activeArea !== 'hand' ? 'opacity-40 grayscale-[0.5] scale-[0.98]' : 'opacity-100 scale-100'"
+        x-on:click="activeArea = 'hand'"
+    >
         <div class="relative">
             <div class="swiper" x-ref="handSwiper">
                 <div class="swiper-wrapper">
@@ -358,32 +371,52 @@ new class extends Component
 
         <div class="absolute inset-0 grid place-items-center">
             <div class="w-full max-w-md px-6">
-                <div class="grid grid-cols-2 gap-4">
-                    <div class="relative">
-                        <img :src="$store.battle.playerImg" class="w-full rounded-2xl border border-white/10" />
-                        <div class="absolute inset-0 rounded-2xl"
-                             :class="$store.battle.outcome === 'win' ? 'ring-2 ring-white/70' : 'ring-0'"></div>
+                <div class="relative h-80 w-full flex items-center justify-center">
+                    {{-- Player Card --}}
+                    <div
+                        class="absolute w-40 aspect-[3/4] transition-all duration-1000"
+                        :class="$store.battle.shattered === 'enemy' ? 'z-30 scale-125 translate-x-0' : ($store.battle.shattered === 'player' ? 'opacity-0 scale-50 -translate-x-24' : '-translate-x-24')"
+                    >
+                        <div class="shatter-container rounded-2xl overflow-hidden" :class="{ 'winner-highlight': $store.battle.outcome === 'win', 'shattered': $store.battle.shattered === 'player' }">
+                            <template x-for="i in 16">
+                                <div class="shatter-piece" :style="getShatterStyle(i-1) + '; background-image: url(' + $store.battle.playerImg + ');'"></div>
+                            </template>
+                        </div>
+                        <div x-show="$store.battle.outcome === 'win'" class="absolute -top-4 -left-4 bg-white text-black px-2 py-1 text-[10px] font-bold uppercase rounded z-20">Winner</div>
                     </div>
-                    <div class="relative">
-                        <img :src="$store.battle.enemyImg" class="w-full rounded-2xl border border-white/10" />
-                        <div class="absolute inset-0 rounded-2xl"
-                             :class="$store.battle.outcome === 'loss' ? 'ring-2 ring-white/70' : 'ring-0'"></div>
+
+                    {{-- Enemy Card --}}
+                    <div
+                        class="absolute w-40 aspect-[3/4] transition-all duration-1000"
+                        :class="$store.battle.shattered === 'player' ? 'z-30 scale-125 translate-x-0' : ($store.battle.shattered === 'enemy' ? 'opacity-0 scale-50 translate-x-24' : 'translate-x-24')"
+                    >
+                        <div class="shatter-container rounded-2xl overflow-hidden" :class="{ 'winner-highlight': $store.battle.outcome === 'loss', 'shattered': $store.battle.shattered === 'enemy' }">
+                            <template x-for="i in 16">
+                                <div class="shatter-piece" :style="getShatterStyle(i-1) + '; background-image: url(' + $store.battle.enemyImg + ');'"></div>
+                            </template>
+                        </div>
+                        <div x-show="$store.battle.outcome === 'loss'" class="absolute -top-4 -right-4 bg-white text-black px-2 py-1 text-[10px] font-bold uppercase rounded z-20">Winner</div>
                     </div>
                 </div>
 
-                <div class="mt-4 text-center text-sm text-zinc-200">
-                    <span x-show="$store.battle.outcome === 'win'">You win the battle.</span>
-                    <span x-show="$store.battle.outcome === 'loss'">You lose the battle.</span>
-                    <span x-show="$store.battle.outcome === 'tie'">Tie — the pot escalates.</span>
+                <div class="mt-12 text-center">
+                    <div x-show="$store.battle.outcome === 'win'" class="text-2xl font-bold text-white tracking-tight">VICTORY</div>
+                    <div x-show="$store.battle.outcome === 'loss'" class="text-2xl font-bold text-zinc-500 tracking-tight">DEFEAT</div>
+                    <div x-show="$store.battle.outcome === 'tie'" class="text-2xl font-bold text-amber-400 tracking-tight animate-bounce">TIE!</div>
+
+                    <div class="mt-2 text-sm text-zinc-400 h-10 flex items-center justify-center">
+                        <span x-text="$store.battle.message"></span>
+                    </div>
                 </div>
 
-                <div class="mt-4 flex justify-center">
+                <div class="mt-8 flex justify-center">
                     <button
                         type="button"
-                        class="rounded-2xl bg-white/10 px-4 py-3 text-sm"
+                        class="group relative px-8 py-3 bg-white text-black font-bold rounded-full overflow-hidden transition-all hover:scale-105 active:scale-95"
                         x-on:click="$store.battle.accept()"
                     >
-                        Accept
+                        <span class="relative z-10">CONTINUE</span>
+                        <div class="absolute inset-0 bg-zinc-200 translate-y-full group-hover:translate-y-0 transition-transform"></div>
                     </button>
                 </div>
             </div>
@@ -397,6 +430,7 @@ new class extends Component
             handSwiper: null,
             planetSwiper: null,
             handIndex: 0,
+            activeArea: 'hand',
 
             // used for win/loss planet nudge
             planetNudge: null,
@@ -413,6 +447,19 @@ new class extends Component
                 setTimeout(() => this.planetNudge = null, 350);
             },
 
+            getShatterStyle(i) {
+                const rows = 4;
+                const cols = 4;
+                const r = Math.floor(i / cols);
+                const c = i % cols;
+                const w = 100 / cols;
+                const h = 100 / rows;
+                const tx = (Math.random() - 0.5) * 500;
+                const ty = (Math.random() - 0.5) * 500;
+                const tr = (Math.random() - 0.5) * 500;
+                return `clip-path: inset(${r * h}% ${(cols - 1 - c) * w}% ${(rows - 1 - r) * h}% ${c * w}%); --tx: ${tx}px; --ty: ${ty}px; --tr: ${tr}deg;`;
+            },
+
             ensureBattleStore() {
                 const build = () => ({
                     visible: false,
@@ -420,6 +467,9 @@ new class extends Component
                     enemyImg: '',
                     outcome: 'tie',
                     planetMove: 'none',
+                    shattered: null,
+                    potEscalated: false,
+                    message: '',
 
                     run(effects) {
                         if (!effects || !effects.length) return;
@@ -430,18 +480,89 @@ new class extends Component
                         this.enemyImg  = e.enemy?.img  || '';
                         this.outcome   = e.outcome || 'tie';
                         this.planetMove = e.planetMove || 'none';
+                        this.shattered = null;
+                        this.potEscalated = (this.outcome === 'tie');
+                        this.message = this.pickMessage(this.outcome, e.player?.strength || 0, e.enemy?.strength || 0);
 
                         // SINGLE PLAYER: stay up until user accepts
                         this.visible = true;
+
+                        if (this.outcome === 'win') {
+                            setTimeout(() => this.shattered = 'enemy', 600);
+                        } else if (this.outcome === 'loss') {
+                            setTimeout(() => this.shattered = 'player', 600);
+                        }
+                    },
+
+                    pickMessage(outcome, pStr, eStr) {
+                        if (outcome === 'tie') return "The conflict escalates. Pot VP increased!";
+
+                        const diff = Math.abs(pStr - eStr);
+                        const tier = diff >= 8 ? 'crushing' : (diff >= 3 ? 'solid' : 'narrow');
+
+                        const pools = {
+                            win: {
+                                crushing: [
+                                    "Total annihilation. The planet is yours.",
+                                    "The enemy was vaporized. Sector claimed.",
+                                    "Crushing dominance. Resistance was futile.",
+                                    "Absolute conquest achieved. A glorious day.",
+                                    "The enemy fled in terror. You claimed the planet."
+                                ],
+                                solid: [
+                                    "You claimed the planet.",
+                                    "Victory is yours! The planet is secured.",
+                                    "The sector falls under your control.",
+                                    "Resistance has been crushed.",
+                                    "Strategic victory. Sector secured."
+                                ],
+                                narrow: [
+                                    "A hard-fought victory. The planet is yours.",
+                                    "Narrowly secured the sector.",
+                                    "The enemy retreats, but barely.",
+                                    "A foothold established, by the skin of your teeth.",
+                                    "Victory, though at a cost."
+                                ]
+                            },
+                            loss: {
+                                crushing: [
+                                    "Our forces were annihilated. The planet is lost.",
+                                    "A humiliating rout. The enemy reigns supreme.",
+                                    "The enemy had ruthlessly occupied the planet, leaving nothing behind.",
+                                    "Complete catastrophic failure. Sector lost.",
+                                    "We were overwhelmed. The enemy holds the world."
+                                ],
+                                solid: [
+                                    "The enemy had ruthlessly occupied the planet.",
+                                    "Our forces were repelled.",
+                                    "Sector lost to enemy control.",
+                                    "The enemy's grip on this world tightens.",
+                                    "Withdrawal confirmed. The planet is lost."
+                                ],
+                                narrow: [
+                                    "A bitter defeat. We almost had them.",
+                                    "The enemy held their ground by a narrow margin.",
+                                    "Forced to retreat. So close, yet so far.",
+                                    "The sector remains contested, but out of our hands.",
+                                    "They held on by a thread."
+                                ]
+                            }
+                        };
+
+                        const pool = pools[outcome][tier];
+                        return pool[Math.floor(Math.random() * pool.length)];
                     },
 
                     accept() {
                         const move = this.planetMove || 'none';
+                        const escalated = this.potEscalated;
                         this.visible = false;
                         this.planetMove = 'none';
+                        this.shattered = null;
+                        this.potEscalated = false;
 
                         window.dispatchEvent(new CustomEvent('battle-accepted', {
-                            detail: { planetMove: move }
+                            detail: { planetMove: move, potEscalated: escalated }
                         }));
                     }
                 });
@@ -477,6 +598,7 @@ new class extends Component
                 // - click peeker => center it
                 // - click active => open modal
                 this.handSwiper.on('click', (swiper) => {
+                    this.activeArea = 'hand';
                     const idx = swiper.clickedIndex;
                     if (idx === null || idx === undefined) return;
 
@@ -518,6 +640,10 @@ new class extends Component
                         el: this.$refs.planetPagination,
                         clickable: true,
                     },
+                });
+
+                this.planetSwiper.on('click', () => {
+                    this.activeArea = 'planets';
                 });
             },
 

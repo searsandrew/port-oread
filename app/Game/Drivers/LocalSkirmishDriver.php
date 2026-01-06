@@ -3,7 +3,11 @@
 namespace App\Game\Drivers;
 
 use App\Game\Contracts\GameDriver;
-use StellarSkirmish\{GameEngine, GameConfig, GameState, Planet, Mercenary};
+use StellarSkirmish\GameConfig;
+use StellarSkirmish\GameEngine;
+use StellarSkirmish\GameState;
+use StellarSkirmish\Mercenary;
+use StellarSkirmish\Planet;
 
 class LocalSkirmishDriver implements GameDriver
 {
@@ -15,7 +19,7 @@ class LocalSkirmishDriver implements GameDriver
     {
         [$state, $meta] = $this->load($sessionId);
 
-        if (!$state) {
+        if (! $state) {
             $state = $this->engine->startNewGame(GameConfig::standardTwoPlayer());
             $meta = [
                 'last_play' => [],
@@ -30,7 +34,7 @@ class LocalSkirmishDriver implements GameDriver
     {
         [$state, $meta] = $this->load($sessionId);
 
-        if (!$state) {
+        if (! $state) {
             $state = $this->engine->startNewGame(GameConfig::standardTwoPlayer());
             $meta = ['last_play' => []];
         }
@@ -63,7 +67,7 @@ class LocalSkirmishDriver implements GameDriver
 
         $effects = $this->effectsFromTransition($before, $after, $meta);
 
-        if (!empty($effects)) {
+        if (! empty($effects)) {
             $meta['last_play'] = [];
         }
 
@@ -78,6 +82,7 @@ class LocalSkirmishDriver implements GameDriver
     private function pickEnemyCardValue(GameState $state): int
     {
         $hand = $state->hands[2] ?? [];
+
         return $hand[array_rand($hand)];
     }
 
@@ -178,6 +183,7 @@ class LocalSkirmishDriver implements GameDriver
             /** @var Mercenary $merc */
             $map[$merc->baseStrength] = $merc;
         }
+
         return $map;
     }
 
@@ -186,16 +192,20 @@ class LocalSkirmishDriver implements GameDriver
         $winnerId = $this->detectWinnerId($before, $after);
 
         $potBefore = count($before->planetPot ?? []);
-        $potAfter  = count($after->planetPot ?? []);
+        $potAfter = count($after->planetPot ?? []);
         $tieEscalated = ($winnerId === null) && ($potAfter > $potBefore);
 
-        if ($winnerId === null && !$tieEscalated) {
+        if ($winnerId === null && ! $tieEscalated) {
             return [];
         }
 
         $outcome = 'tie';
-        if ($winnerId === 1) $outcome = 'win';
-        if ($winnerId !== null && $winnerId !== 1) $outcome = 'loss';
+        if ($winnerId === 1) {
+            $outcome = 'win';
+        }
+        if ($winnerId !== null && $winnerId !== 1) {
+            $outcome = 'loss';
+        }
 
         $lp = $meta['last_play'] ?? [];
 
@@ -205,14 +215,14 @@ class LocalSkirmishDriver implements GameDriver
         $p1Img = $lp[1]['img'] ?? (is_int($p1Val) ? $this->cardImgFromValue($p1Val) : null);
         $p2Img = $lp[2]['img'] ?? (is_int($p2Val) ? $this->cardImgFromValue($p2Val) : null);
 
-        if (!$p1Img || !$p2Img) {
+        if (! $p1Img || ! $p2Img) {
             return [];
         }
 
         return [[
             'type' => 'battle_resolve',
-            'player' => ['img' => $p1Img],
-            'enemy'  => ['img' => $p2Img],
+            'player' => ['img' => $p1Img, 'strength' => $p1Val],
+            'enemy' => ['img' => $p2Img, 'strength' => $p2Val],
             'outcome' => $outcome,
             'planetMove' => $outcome === 'win' ? 'down' : ($outcome === 'loss' ? 'up' : 'none'),
             'tieEscalated' => $tieEscalated,
@@ -223,17 +233,20 @@ class LocalSkirmishDriver implements GameDriver
     {
         for ($pid = 1; $pid <= $after->playerCount; $pid++) {
             $beforeCount = count($before->claimedPlanets[$pid] ?? []);
-            $afterCount  = count($after->claimedPlanets[$pid] ?? []);
+            $afterCount = count($after->claimedPlanets[$pid] ?? []);
             if ($afterCount > $beforeCount) {
                 return $pid;
             }
         }
+
         return null;
     }
 
     private function cardValueFromId(string $cardId): int
     {
-        if (ctype_digit($cardId)) return (int) $cardId;
+        if (ctype_digit($cardId)) {
+            return (int) $cardId;
+        }
         throw new \RuntimeException("Card ID '{$cardId}' is not numeric. Implement cardValueFromId() mapping.");
     }
 
@@ -245,7 +258,9 @@ class LocalSkirmishDriver implements GameDriver
     private function load(string $sessionId): array
     {
         $raw = cache()->get("game:{$sessionId}");
-        if (!is_array($raw)) return [null, null];
+        if (! is_array($raw)) {
+            return [null, null];
+        }
 
         $stateArr = $raw['state'] ?? null;
         $meta = $raw['meta'] ?? ['last_play' => []];
