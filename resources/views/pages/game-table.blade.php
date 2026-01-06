@@ -61,6 +61,7 @@ new class extends Component
 
         $result = $game->playCard($this->sessionId, $this->playerId, $this->selectedCardId);
 
+        // fire effects first (overlay listens for this)
         $effects = $result['effects'] ?? [];
         if (!empty($effects)) {
             $this->dispatch('game-effects', effects: $effects);
@@ -172,7 +173,7 @@ new class extends Component
                             <div
                                 class="select-none"
                                 x-on:click="handleCardClick({{ $loop->index }}, '{{ $card['id'] }}')"
-                                x-on:pointerdown="pointerStart($event)"
+                                x-on:pointerdown="pointerStart($event, {{ $loop->index }})"
                                 x-on:pointerup="pointerEnd($event, '{{ $card['id'] }}', {{ $loop->index }})"
                             >
                                 <div class="relative">
@@ -202,7 +203,7 @@ new class extends Component
         </div>
     </div>
 
-    {{-- Card Menu Dialog (centered, connected) --}}
+    {{-- Card Menu Dialog --}}
     <div x-cloak x-show="$wire.showCardMenu" class="fixed inset-0 z-40">
         <div class="absolute inset-0 bg-black/70" x-on:click="$wire.closeCardMenu()"></div>
 
@@ -290,8 +291,9 @@ new class extends Component
         </div>
     </div>
 
-    {{-- Battle Overlay (blocks input) --}}
+    {{-- Battle Overlay (IMPORTANT: wire:ignore so Livewire never breaks Alpine scope) --}}
     <div
+        wire:ignore
         id="battle-overlay"
         class="fixed inset-0 z-60"
         x-data="battleOverlay()"
@@ -328,9 +330,13 @@ new class extends Component
     function portOreadTable() {
         return {
             handSwiper: null,
+
+            // gesture state
             startY: null,
             startX: null,
+            startTime: null,
             startIdx: null,
+            pointerId: null,
 
             init() {
                 this.initHandSwiper();
@@ -354,7 +360,7 @@ new class extends Component
                 });
             },
 
-            // Click peeking card -> advance; click active -> open menu
+            // Clicking peeking card advances; clicking active opens menu
             handleCardClick(index, cardId) {
                 if (!this.handSwiper) {
                     this.$wire.openCardMenu(cardId);
@@ -365,43 +371,52 @@ new class extends Component
 
                 if (index !== active) {
                     this.handSwiper.slideTo(index);
-                    // do NOT open menu yet (this is the "advance" click)
                     return;
                 }
 
-                // active card click opens menu
                 this.$wire.openCardMenu(cardId);
             },
 
-            pointerStart(e) {
-                this.startY = e.clientY;
-                this.startX = e.clientX;
-                this.startIdx = this.handSwiper ? this.handSwiper.activeIndex : null;
+            pointerStart(e, index) {
+                // If a modal is open, don't track swipe-to-play
+                if (this.$wire.showCardMenu || this.$wire.showInfoModal) return;
+
+                this.pointerId = e.pointerId;
+                this.startY = (typeof e.clientY === 'number') ? e.clientY : null;
+                this.startX = (typeof e.clientX === 'number') ? e.clientX : null;
+                this.startTime = performance.now();
+                this.startIdx = this.handSwiper ? this.handSwiper.activeIndex : index;
             },
 
             pointerEnd(e, cardId, index) {
-                if (this.startY === null) return;
+                if (this.$wire.showCardMenu || this.$wire.showInfoModal) return;
+                if (this.startY === null || this.startX === null || this.pointerId !== e.pointerId) return;
 
-                const dy = e.clientY - this.startY;
-                const dx = e.clientX - this.startX;
+                const endY = (typeof e.clientY === 'number') ? e.clientY : null;
+                const endX = (typeof e.clientX === 'number') ? e.clientX : null;
+                if (endY === null || endX === null) return;
 
-                // If user is horizontally swiping, ignore vertical play gesture
-                if (Math.abs(dx) > Math.abs(dy)) {
-                    this.startY = null;
-                    return;
-                }
+                const dy = endY - this.startY;
+                const dx = endX - this.startX;
+                const elapsed = performance.now() - (this.startTime ?? performance.now());
 
-                // swipe up threshold (desktop + mobile)
-                if (dy < -70) {
-                    // only allow swipe-up play on active card to avoid weirdness
-                    const active = this.handSwiper ? this.handSwiper.activeIndex : index;
-                    if (index === active) {
-                        this.$wire.selectedCardId = cardId;
-                        this.$wire.playSelected();
-                    }
-                }
+                // Reset immediately so we never "carry" a gesture between clicks
+                this.startY = this.startX = this.startTime = null;
+                this.pointerId = null;
 
-                this.startY = null;
+                // Require a *real* vertical swipe:
+                // - fast-ish gesture
+                // - mostly vertical
+                // - large upward travel
+                if (elapsed > 900) return;
+                if (Math.abs(dx) > 60) return;
+                if (dy > -90) return; // must be upward by at least 90px
+
+                const active = this.handSwiper ? this.handSwiper.activeIndex : index;
+                if (index !== active) return;
+
+                this.$wire.selectedCardId = cardId;
+                this.$wire.playSelected();
             },
         };
     }
@@ -409,8 +424,8 @@ new class extends Component
     function battleOverlay() {
         return {
             visible: false,
-            playerImg: null,
-            enemyImg: null,
+            playerImg: '',
+            enemyImg: '',
             outcome: 'tie',
 
             run(effects) {
@@ -419,10 +434,11 @@ new class extends Component
                 const e = effects.find(x => x.type === 'battle_resolve');
                 if (!e) return;
 
-                this.playerImg = e.player?.img;
-                this.enemyImg = e.enemy?.img;
-                this.outcome = e.outcome || 'tie';
+                this.playerImg = e.player?.img || '';
+                this.enemyImg  = e.enemy?.img  || '';
+                this.outcome   = e.outcome || 'tie';
 
+                // show overlay briefly
                 this.visible = true;
                 setTimeout(() => this.visible = false, 900);
             }
