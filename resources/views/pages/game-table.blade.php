@@ -15,7 +15,6 @@ new class extends Component
     public ?string $selectedCardId = null;
 
     public bool $showCardMenu = false;
-    public bool $showInfoModal = false;
 
     public function mount(GameService $game): void
     {
@@ -42,17 +41,8 @@ new class extends Component
     public function closeCardMenu(): void
     {
         $this->showCardMenu = false;
-    }
-
-    public function openInfo(): void
-    {
-        $this->showCardMenu = false;
-        $this->showInfoModal = true;
-    }
-
-    public function closeInfo(): void
-    {
-        $this->showInfoModal = false;
+        // Alpine will restore swiper position on re-render
+        $this->dispatch('modal-closed');
     }
 
     public function playSelected(GameService $game): void
@@ -61,7 +51,6 @@ new class extends Component
 
         $result = $game->playCard($this->sessionId, $this->playerId, $this->selectedCardId);
 
-        // fire effects first (overlay listens for this)
         $effects = $result['effects'] ?? [];
         if (!empty($effects)) {
             $this->dispatch('game-effects', effects: $effects);
@@ -113,6 +102,8 @@ new class extends Component
     x-data="portOreadTable()"
     x-init="init()"
     x-on:hand-updated.window="refreshHandSwiper()"
+    x-on:planets-updated.window="refreshPlanetSwiper()"
+    x-on:modal-closed.window="restoreHandIndexSoon()"
 >
     {{-- HUD --}}
     <div class="px-4 pt-4">
@@ -129,33 +120,56 @@ new class extends Component
         </div>
     </div>
 
-    {{-- Planet Stage --}}
+    {{-- Planet Stage (Swiper) --}}
     <div class="px-4 pt-4">
         <div class="rounded-3xl border border-white/10 bg-white/5 p-4">
-            <div class="flex items-start justify-between gap-4">
-                <div class="min-w-0">
-                    <div class="text-sm text-zinc-400">Planet up for grabs</div>
-                    <div class="mt-1 text-lg font-semibold truncate">
-                        {{ ($planets[0]['name'] ?? '—') }}
-                    </div>
-                    <div class="mt-1 text-sm text-zinc-300 line-clamp-2">
-                        {{ ($planets[0]['flavor'] ?? '') }}
-                    </div>
+            <div class="flex items-center justify-between">
+                <div class="text-sm text-zinc-400">Planet(s) in the pot</div>
+                <div class="text-xs text-zinc-500">
+                    @if(count($planets) > 1)
+                        Swipe • {{ count($planets) }} in pot
+                    @else
+                        Single planet
+                    @endif
                 </div>
+            </div>
 
-                <div class="flex gap-2 shrink-0">
-                    <div class="h-10 w-10 rounded-full border border-white/10 bg-white/5 grid place-items-center text-xs">
-                        {{ ($planets[0]['type'] ?? '') }}
-                    </div>
-                    <div class="h-10 w-10 rounded-full border border-white/10 bg-white/5 grid place-items-center text-sm font-semibold">
-                        {{ ($planets[0]['vp'] ?? 0) }}
+            <div class="mt-3">
+                <div class="swiper" x-ref="planetSwiper">
+                    <div class="swiper-wrapper">
+                        @foreach($planets as $planet)
+                            <div class="swiper-slide" wire:key="planet-{{ $planet['id'] }}-{{ $loop->index }}">
+                                <div class="rounded-2xl border border-white/10 bg-white/5 p-4">
+                                    <div class="flex items-start justify-between gap-4">
+                                        <div class="min-w-0">
+                                            <div class="text-lg font-semibold truncate">
+                                                {{ $planet['name'] ?? '—' }}
+                                            </div>
+                                            <div class="mt-1 text-sm text-zinc-300 line-clamp-2">
+                                                {{ $planet['flavor'] ?? '' }}
+                                            </div>
+                                        </div>
+
+                                        <div class="flex gap-2 shrink-0">
+                                            <div class="h-10 w-10 rounded-full border border-white/10 bg-white/5 grid place-items-center text-xs">
+                                                {{ $planet['type'] ?? '' }}
+                                            </div>
+                                            <div class="h-10 w-10 rounded-full border border-white/10 bg-white/5 grid place-items-center text-sm font-semibold">
+                                                {{ $planet['vp'] ?? 0 }}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        @endforeach
                     </div>
                 </div>
             </div>
 
+            {{-- tiny swipe hint --}}
             @if(count($planets) > 1)
-                <div class="mt-3 text-xs text-zinc-400">
-                    Tie stack: {{ count($planets) }} planets in the pot.
+                <div class="mt-2 text-xs text-zinc-500">
+                    Pot details matter for Corporations — swipe to inspect each planet.
                 </div>
             @endif
         </div>
@@ -169,12 +183,10 @@ new class extends Component
             <div class="swiper" x-ref="handSwiper">
                 <div class="swiper-wrapper">
                     @foreach($hand as $card)
-                        <div class="swiper-slide">
+                        <div class="swiper-slide" data-card-id="{{ $card['id'] }}" wire:key="hand-{{ $card['id'] }}">
                             <div
                                 class="select-none"
-                                x-on:click="handleCardClick({{ $loop->index }}, '{{ $card['id'] }}')"
-                                x-on:pointerdown="pointerStart($event, {{ $loop->index }})"
-                                x-on:pointerup="pointerEnd($event, '{{ $card['id'] }}', {{ $loop->index }})"
+                                x-on:click="handleHandClick({{ $loop->index }}, '{{ $card['id'] }}')"
                             >
                                 <div class="relative">
                                     <img
@@ -201,9 +213,13 @@ new class extends Component
             <div class="pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-zinc-950 to-transparent"></div>
             <div class="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-zinc-950 to-transparent"></div>
         </div>
+
+        <div class="mt-2 text-xs text-zinc-500">
+            Click peeking cards to center them. Click the centered card to play.
+        </div>
     </div>
 
-    {{-- Card Menu Dialog --}}
+    {{-- Select / Play Modal (no separate Info modal) --}}
     <div x-cloak x-show="$wire.showCardMenu" class="fixed inset-0 z-40">
         <div class="absolute inset-0 bg-black/70" x-on:click="$wire.closeCardMenu()"></div>
 
@@ -218,88 +234,40 @@ new class extends Component
 
                 @if($selected)
                     <img src="{{ $selected['img'] }}" class="mt-3 w-full rounded-2xl border border-white/10" draggable="false" />
+
+                    @if(($selected['isMerc'] ?? false) === true)
+                        <div class="mt-3 rounded-2xl border border-white/10 bg-white/5 p-3">
+                            <div class="text-xs text-zinc-400">Mercenary</div>
+                            <div class="mt-1 text-sm font-semibold">
+                                {{ $selected['merc']['name'] ?? 'Mercenary' }}
+                            </div>
+                            <div class="mt-2 text-sm text-zinc-300">
+                                <span class="font-semibold">{{ $mercAbilityTitle($selected['merc']['ability_type'] ?? null) }}:</span>
+                                {!! $mercAbilityDescription($selected['merc']['ability_type'] ?? null, $selected['merc']['params'] ?? []) !!}
+                            </div>
+                        </div>
+                    @endif
                 @endif
 
-                <div class="mt-4 grid grid-cols-3 gap-2">
+                <div class="mt-4 grid grid-cols-2 gap-2">
                     <button class="rounded-2xl bg-white/10 px-3 py-3 text-sm" wire:click="playSelected">
                         Play
                     </button>
                     <button class="rounded-2xl bg-white/5 px-3 py-3 text-sm" wire:click="closeCardMenu">
                         Cancel
                     </button>
-                    <button class="rounded-2xl bg-white/5 px-3 py-3 text-sm" wire:click="openInfo">
-                        Info
-                    </button>
-                </div>
-
-                <div class="mt-2 text-xs text-zinc-500">
-                    Swipe up on the active card to play instantly.
                 </div>
             </div>
         </div>
     </div>
 
-    {{-- Info Modal --}}
-    <div x-cloak x-show="$wire.showInfoModal" class="fixed inset-0 z-50">
-        <div class="absolute inset-0 bg-black/70" x-on:click="$wire.closeInfo()"></div>
-
-        <div class="absolute inset-0 grid place-items-center p-4">
-            <div class="w-full max-w-sm rounded-3xl border border-white/10 bg-zinc-950 p-4">
-                @php($selected = collect($hand)->firstWhere('id', $selectedCardId))
-
-                <div class="flex items-center justify-between">
-                    <div class="text-sm font-semibold">Card Info</div>
-                    <button class="text-zinc-400" wire:click="closeInfo">✕</button>
-                </div>
-
-                @if($selected)
-                    <img src="{{ $selected['img'] }}" class="mt-3 w-full rounded-2xl border border-white/10" draggable="false" />
-
-                    @if(($selected['isMerc'] ?? false) === true)
-                        <div class="mt-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs">
-                            <span class="h-2 w-2 rounded-full bg-white/40"></span>
-                            Mercenary
-                        </div>
-
-                        <div class="mt-3">
-                            <div class="text-sm font-semibold">
-                                {{ $selected['merc']['name'] ?? 'Mercenary' }}
-                            </div>
-
-                            <div class="mt-2 rounded-2xl border border-white/10 bg-white/5 p-3">
-                                <div class="text-sm font-semibold">
-                                    {{ $mercAbilityTitle($selected['merc']['ability_type'] ?? null) }}
-                                </div>
-                                <div class="mt-1 text-sm text-zinc-300">
-                                    {!! $mercAbilityDescription($selected['merc']['ability_type'] ?? null, $selected['merc']['params'] ?? []) !!}
-                                </div>
-                            </div>
-                        </div>
-                    @else
-                        <div class="mt-3 text-sm text-zinc-300">Standard ship card.</div>
-                    @endif
-                @else
-                    <div class="mt-4 text-sm text-zinc-400">No card selected.</div>
-                @endif
-
-                <div class="mt-4">
-                    <button class="w-full rounded-2xl bg-white/10 px-3 py-3 text-sm" wire:click="closeInfo">
-                        Close
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    {{-- Battle Overlay (IMPORTANT: wire:ignore so Livewire never breaks Alpine scope) --}}
+    {{-- Battle Overlay using Alpine STORE (so Livewire can't break scope) --}}
     <div
         wire:ignore
-        id="battle-overlay"
         class="fixed inset-0 z-60"
-        x-data="battleOverlay()"
-        x-on:game-effects.window="run($event.detail.effects)"
-        x-show="visible"
         x-cloak
+        x-show="$store.battle && $store.battle.visible"
+        x-on:game-effects.window="$store.battle && $store.battle.run($event.detail.effects)"
     >
         <div class="absolute inset-0 bg-black/80"></div>
 
@@ -307,19 +275,21 @@ new class extends Component
             <div class="w-full max-w-md px-6">
                 <div class="grid grid-cols-2 gap-4">
                     <div class="relative">
-                        <img :src="playerImg" class="w-full rounded-2xl border border-white/10" />
-                        <div class="absolute inset-0 rounded-2xl" :class="outcome === 'win' ? 'ring-2 ring-white/70' : 'ring-0'"></div>
+                        <img :src="$store.battle.playerImg" class="w-full rounded-2xl border border-white/10" />
+                        <div class="absolute inset-0 rounded-2xl"
+                             :class="$store.battle.outcome === 'win' ? 'ring-2 ring-white/70' : 'ring-0'"></div>
                     </div>
                     <div class="relative">
-                        <img :src="enemyImg" class="w-full rounded-2xl border border-white/10" />
-                        <div class="absolute inset-0 rounded-2xl" :class="outcome === 'loss' ? 'ring-2 ring-white/70' : 'ring-0'"></div>
+                        <img :src="$store.battle.enemyImg" class="w-full rounded-2xl border border-white/10" />
+                        <div class="absolute inset-0 rounded-2xl"
+                             :class="$store.battle.outcome === 'loss' ? 'ring-2 ring-white/70' : 'ring-0'"></div>
                     </div>
                 </div>
 
                 <div class="mt-4 text-center text-sm text-zinc-200">
-                    <span x-show="outcome === 'win'">You win the battle.</span>
-                    <span x-show="outcome === 'loss'">You lose the battle.</span>
-                    <span x-show="outcome === 'tie'">Tie — the pot escalates.</span>
+                    <span x-show="$store.battle.outcome === 'win'">You win the battle.</span>
+                    <span x-show="$store.battle.outcome === 'loss'">You lose the battle.</span>
+                    <span x-show="$store.battle.outcome === 'tie'">Tie — the pot escalates.</span>
                 </div>
             </div>
         </div>
@@ -330,16 +300,45 @@ new class extends Component
     function portOreadTable() {
         return {
             handSwiper: null,
-
-            // gesture state
-            startY: null,
-            startX: null,
-            startTime: null,
-            startIdx: null,
-            pointerId: null,
+            planetSwiper: null,
+            handIndex: 0,
 
             init() {
+                this.ensureBattleStore();
                 this.initHandSwiper();
+                this.initPlanetSwiper();
+            },
+
+            ensureBattleStore() {
+                const build = () => ({
+                    visible: false,
+                    playerImg: '',
+                    enemyImg: '',
+                    outcome: 'tie',
+                    run(effects) {
+                        if (!effects || !effects.length) return;
+                        const e = effects.find(x => x.type === 'battle_resolve');
+                        if (!e) return;
+
+                        this.playerImg = e.player?.img || '';
+                        this.enemyImg  = e.enemy?.img  || '';
+                        this.outcome   = e.outcome || 'tie';
+
+                        this.visible = true;
+                        setTimeout(() => this.visible = false, 900);
+                    }
+                });
+
+                const setStore = () => {
+                    if (!window.Alpine || !window.Alpine.store) return;
+                    if (!window.Alpine.store('battle')) {
+                        window.Alpine.store('battle', build());
+                    }
+                };
+
+                // works whether Alpine already started or not
+                setStore();
+                document.addEventListener('alpine:init', setStore);
             },
 
             initHandSwiper() {
@@ -349,19 +348,65 @@ new class extends Component
                     slidesPerView: 1.35,
                     centeredSlides: true,
                     spaceBetween: 14,
-                    slideToClickedSlide: true,
+                    // IMPORTANT: do NOT use slideToClickedSlide — it races our click behavior
+                });
+
+                // keep selectedCardId synced to active slide
+                this.handSwiper.on('slideChange', () => {
+                    this.handIndex = this.handSwiper.activeIndex;
+                    this.syncSelectedToActiveSlide();
+                });
+
+                // initial sync
+                this.handIndex = this.handSwiper.activeIndex || 0;
+                this.syncSelectedToActiveSlide();
+            },
+
+            initPlanetSwiper() {
+                if (!window.Swiper) return;
+
+                this.planetSwiper = new Swiper(this.$refs.planetSwiper, {
+                    slidesPerView: 1,
+                    spaceBetween: 10,
                 });
             },
 
             refreshHandSwiper() {
                 this.$nextTick(() => {
-                    if (this.handSwiper) this.handSwiper.update();
-                    else this.initHandSwiper();
+                    const idx = this.handIndex;
+
+                    if (this.handSwiper) {
+                        this.handSwiper.update();
+                        this.handSwiper.slideTo(Math.min(idx, this.handSwiper.slides.length - 1), 0);
+                    } else {
+                        this.initHandSwiper();
+                    }
+
+                    this.syncSelectedToActiveSlide();
                 });
             },
 
-            // Clicking peeking card advances; clicking active opens menu
-            handleCardClick(index, cardId) {
+            refreshPlanetSwiper() {
+                this.$nextTick(() => {
+                    if (this.planetSwiper) {
+                        this.planetSwiper.update();
+                        this.planetSwiper.slideTo(0, 0);
+                    } else {
+                        this.initPlanetSwiper();
+                    }
+                });
+            },
+
+            restoreHandIndexSoon() {
+                // modal close triggers a Livewire morph; restore after the DOM settles
+                this.$nextTick(() => {
+                    if (!this.handSwiper) return;
+                    this.handSwiper.update();
+                    this.handSwiper.slideTo(Math.min(this.handIndex, this.handSwiper.slides.length - 1), 0);
+                });
+            },
+
+            handleHandClick(index, cardId) {
                 if (!this.handSwiper) {
                     this.$wire.openCardMenu(cardId);
                     return;
@@ -369,78 +414,23 @@ new class extends Component
 
                 const active = this.handSwiper.activeIndex;
 
+                // Peeking card click => center only
                 if (index !== active) {
+                    this.handIndex = index;
                     this.handSwiper.slideTo(index);
+                    // do NOT open modal
                     return;
                 }
 
+                // Center card click => open modal
                 this.$wire.openCardMenu(cardId);
             },
 
-            pointerStart(e, index) {
-                // If a modal is open, don't track swipe-to-play
-                if (this.$wire.showCardMenu || this.$wire.showInfoModal) return;
-
-                this.pointerId = e.pointerId;
-                this.startY = (typeof e.clientY === 'number') ? e.clientY : null;
-                this.startX = (typeof e.clientX === 'number') ? e.clientX : null;
-                this.startTime = performance.now();
-                this.startIdx = this.handSwiper ? this.handSwiper.activeIndex : index;
-            },
-
-            pointerEnd(e, cardId, index) {
-                if (this.$wire.showCardMenu || this.$wire.showInfoModal) return;
-                if (this.startY === null || this.startX === null || this.pointerId !== e.pointerId) return;
-
-                const endY = (typeof e.clientY === 'number') ? e.clientY : null;
-                const endX = (typeof e.clientX === 'number') ? e.clientX : null;
-                if (endY === null || endX === null) return;
-
-                const dy = endY - this.startY;
-                const dx = endX - this.startX;
-                const elapsed = performance.now() - (this.startTime ?? performance.now());
-
-                // Reset immediately so we never "carry" a gesture between clicks
-                this.startY = this.startX = this.startTime = null;
-                this.pointerId = null;
-
-                // Require a *real* vertical swipe:
-                // - fast-ish gesture
-                // - mostly vertical
-                // - large upward travel
-                if (elapsed > 900) return;
-                if (Math.abs(dx) > 60) return;
-                if (dy > -90) return; // must be upward by at least 90px
-
-                const active = this.handSwiper ? this.handSwiper.activeIndex : index;
-                if (index !== active) return;
-
-                this.$wire.selectedCardId = cardId;
-                this.$wire.playSelected();
-            },
-        };
-    }
-
-    function battleOverlay() {
-        return {
-            visible: false,
-            playerImg: '',
-            enemyImg: '',
-            outcome: 'tie',
-
-            run(effects) {
-                if (!effects || !effects.length) return;
-
-                const e = effects.find(x => x.type === 'battle_resolve');
-                if (!e) return;
-
-                this.playerImg = e.player?.img || '';
-                this.enemyImg  = e.enemy?.img  || '';
-                this.outcome   = e.outcome || 'tie';
-
-                // show overlay briefly
-                this.visible = true;
-                setTimeout(() => this.visible = false, 900);
+            syncSelectedToActiveSlide() {
+                if (!this.handSwiper) return;
+                const slide = this.handSwiper.slides[this.handSwiper.activeIndex];
+                const id = slide?.dataset?.cardId;
+                if (id) this.$wire.selectedCardId = id;
             }
         };
     }
