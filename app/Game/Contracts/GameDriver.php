@@ -6,6 +6,8 @@ interface GameDriver
 {
     public function snapshot(string $sessionId): array;
 
+    public function startNewGame(string $sessionId, array $options = []): array;
+
     /**
      * Executes a player action and returns:
      * - 'snapshot' => updated snapshot

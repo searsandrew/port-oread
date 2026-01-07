@@ -19,6 +19,10 @@ new class extends Component
     public bool $gameOver = false;
     public ?string $endReason = null;
 
+    public bool $isSelectingFaction = false;
+    public ?string $playerFaction = null;
+    public ?string $enemyFaction = null;
+
     public function mount(GameService $game): void
     {
         $this->sessionId ??= (string) Str::uuid();
@@ -27,15 +31,30 @@ new class extends Component
 
     private function applySnapshot(array $snapshot): void
     {
+        if ($snapshot['needs_faction'] ?? false) {
+            $this->isSelectingFaction = true;
+            return;
+        }
+
+        $this->isSelectingFaction = false;
+
         $this->hud = $snapshot['hud'] ?? $this->hud;
         $this->planets = $snapshot['planets'] ?? [];
         $this->hand = $snapshot['hand'] ?? [];
+
+        $this->playerFaction = $snapshot['factions']['player'] ?? null;
+        $this->enemyFaction = $snapshot['factions']['enemy'] ?? null;
 
         $this->selectedCardId = $snapshot['selectedCardId']
             ?? ($this->hand[0]['id'] ?? null);
 
         $this->gameOver = (bool) ($snapshot['gameOver'] ?? false);
         $this->endReason = $snapshot['endReason'] ?? null;
+    }
+
+    public function selectFaction(GameService $game, string $faction): void
+    {
+        $this->applySnapshot($game->startNewGame($this->sessionId, ['player_faction' => $faction]));
     }
 
     public function openCardMenu(string $cardId): void
@@ -75,7 +94,9 @@ new class extends Component
     public function newGame(GameService $game): void
     {
         $this->sessionId = (string) Str::uuid();
-        $this->applySnapshot($game->snapshot($this->sessionId));
+        $this->isSelectingFaction = true;
+        $this->gameOver = false;
+        $this->endReason = null;
 
         $this->showCardMenu = false;
 
@@ -131,6 +152,30 @@ new class extends Component
     x-on:modal-closed.window="restoreHandIndexSoon()"
     x-on:battle-accepted.window="nudgePlanet($event.detail.planetMove)"
 >
+    {{-- Faction Selection --}}
+    @if($isSelectingFaction)
+        <div class="fixed inset-0 z-[100] bg-zinc-950 flex flex-col items-center justify-center p-6 text-center">
+            <h2 class="text-xs text-zinc-500 uppercase tracking-[0.3em] mb-4">Tactical Deployment</h2>
+            <h1 class="text-4xl font-bold tracking-tighter mb-12 italic">PORT OREAD</h1>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-5xl">
+                @foreach(['neupert', 'wami', 'rogers'] as $faction)
+                    <button
+                        wire:click="selectFaction('{{ $faction }}')"
+                        class="group relative flex flex-col items-center p-8 rounded-[2rem] border border-white/10 bg-white/5 hover:bg-white/10 transition-all hover:-translate-y-2 active:scale-95"
+                    >
+                        <div class="w-40 aspect-[3/4] mb-6 rounded-2xl overflow-hidden border border-white/20 shadow-2xl">
+                            <img src="/images/cards/{{ $faction }}/1.png" class="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-500" alt="{{ ucfirst($faction) }}">
+                        </div>
+                        <h2 class="text-2xl font-black uppercase tracking-tighter italic">{{ $faction }}</h2>
+                        <div class="mt-2 h-1 w-8 bg-white/20 group-hover:w-16 group-hover:bg-white transition-all duration-500"></div>
+                    </button>
+                @endforeach
+            </div>
+
+            <p class="mt-16 text-xs text-zinc-500 uppercase tracking-widest animate-pulse">Awaiting faction authorization...</p>
+        </div>
+    @endif
     {{-- HUD --}}
     <div class="px-4 pt-4 shrink-0 transition-opacity duration-300" :class="activeArea !== 'hand' && activeArea !== 'planets' ? 'opacity-50' : 'opacity-100'">
         <div class="flex items-center justify-between">

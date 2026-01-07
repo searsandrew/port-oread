@@ -20,14 +20,29 @@ class LocalSkirmishDriver implements GameDriver
         [$state, $meta] = $this->load($sessionId);
 
         if (! $state) {
-            $state = $this->engine->startNewGame(GameConfig::standardTwoPlayer());
-            $meta = [
-                'last_play' => [],
-            ];
-            $this->save($sessionId, $state, $meta);
+            return ['needs_faction' => true];
         }
 
-        return $this->toSnapshot($state);
+        return $this->toSnapshot($state, $meta);
+    }
+
+    public function startNewGame(string $sessionId, array $options = []): array
+    {
+        $playerFaction = $options['player_faction'] ?? 'neupert';
+        $enemyFaction = $options['enemy_faction'] ?? collect(['neupert', 'wami', 'rogers'])->random();
+
+        $state = $this->engine->startNewGame(GameConfig::standardTwoPlayer());
+        $meta = [
+            'last_play' => [],
+            'factions' => [
+                1 => $playerFaction,
+                2 => $enemyFaction,
+            ],
+        ];
+
+        $this->save($sessionId, $state, $meta);
+
+        return $this->toSnapshot($state, $meta);
     }
 
     public function playCard(string $sessionId, string $playerId, string $cardId): array
@@ -35,8 +50,7 @@ class LocalSkirmishDriver implements GameDriver
         [$state, $meta] = $this->load($sessionId);
 
         if (! $state) {
-            $state = $this->engine->startNewGame(GameConfig::standardTwoPlayer());
-            $meta = ['last_play' => []];
+            return $this->startNewGame($sessionId);
         }
 
         $pid = (int) $playerId;
@@ -44,9 +58,12 @@ class LocalSkirmishDriver implements GameDriver
 
         $before = clone $state;
 
+        $factions = $meta['factions'] ?? [1 => 'neupert', 2 => 'neupert'];
+        $pidFaction = $factions[$pid] ?? 'neupert';
+
         $meta['last_play'][$pid] = [
             'cardValue' => $cardValue,
-            'img' => $this->cardImgFromValue($cardValue),
+            'img' => $this->cardImgFromValue($cardValue, $pidFaction),
         ];
 
         $after = $this->engine->playCard($state, playerId: $pid, cardValue: $cardValue);
@@ -58,9 +75,11 @@ class LocalSkirmishDriver implements GameDriver
             && ($after->hands[2] ?? []) !== []
         ) {
             $enemyCard = $this->pickEnemyCardValue($after);
+            $enemyFaction = $factions[2] ?? 'neupert';
+
             $meta['last_play'][2] = [
                 'cardValue' => $enemyCard,
-                'img' => $this->cardImgFromValue($enemyCard),
+                'img' => $this->cardImgFromValue($enemyCard, $enemyFaction),
             ];
             $after = $this->engine->playCard($after, playerId: 2, cardValue: $enemyCard);
         }
@@ -74,7 +93,7 @@ class LocalSkirmishDriver implements GameDriver
         $this->save($sessionId, $after, $meta);
 
         return [
-            'snapshot' => $this->toSnapshot($after),
+            'snapshot' => $this->toSnapshot($after, $meta),
             'effects' => $effects,
         ];
     }
@@ -86,8 +105,12 @@ class LocalSkirmishDriver implements GameDriver
         return $hand[array_rand($hand)];
     }
 
-    private function toSnapshot(GameState $state): array
+    private function toSnapshot(GameState $state, array $meta = []): array
     {
+        $factions = $meta['factions'] ?? [1 => 'neupert', 2 => 'neupert'];
+        $playerFaction = $factions[1] ?? 'neupert';
+        $enemyFaction = $factions[2] ?? 'neupert';
+
         // --- planet stage ---
         // Engine does not reveal/add to pot until the first play.
         // UX: show a preview planet if pot is empty.
@@ -132,12 +155,12 @@ class LocalSkirmishDriver implements GameDriver
         $handValues = $state->hands[1] ?? [];
         $mercMap = $this->mercsByStrengthForPlayer($state, 1);
 
-        $hand = array_map(function (int $v) use ($mercMap) {
+        $hand = array_map(function (int $v) use ($mercMap, $playerFaction) {
             $merc = $mercMap[$v] ?? null;
 
             return [
                 'id' => (string) $v,
-                'img' => $this->cardImgFromValue($v),
+                'img' => $this->cardImgFromValue($v, $playerFaction),
 
                 'isMerc' => $merc !== null,
                 'merc' => $merc ? [
@@ -167,6 +190,10 @@ class LocalSkirmishDriver implements GameDriver
             'selectedCardId' => $selected,
             'gameOver' => $state->gameOver,
             'endReason' => $state->endReason?->value,
+            'factions' => [
+                'player' => $playerFaction,
+                'enemy' => $enemyFaction,
+            ],
         ];
     }
 
@@ -207,13 +234,15 @@ class LocalSkirmishDriver implements GameDriver
             $outcome = 'loss';
         }
 
+        $factions = $meta['factions'] ?? [1 => 'neupert', 2 => 'neupert'];
+
         $lp = $meta['last_play'] ?? [];
 
         $p1Val = $lp[1]['cardValue'] ?? null;
         $p2Val = $lp[2]['cardValue'] ?? null;
 
-        $p1Img = $lp[1]['img'] ?? (is_int($p1Val) ? $this->cardImgFromValue($p1Val) : null);
-        $p2Img = $lp[2]['img'] ?? (is_int($p2Val) ? $this->cardImgFromValue($p2Val) : null);
+        $p1Img = $lp[1]['img'] ?? (is_int($p1Val) ? $this->cardImgFromValue($p1Val, $factions[1] ?? 'neupert') : null);
+        $p2Img = $lp[2]['img'] ?? (is_int($p2Val) ? $this->cardImgFromValue($p2Val, $factions[2] ?? 'neupert') : null);
 
         if (! $p1Img || ! $p2Img) {
             return [];
@@ -250,9 +279,9 @@ class LocalSkirmishDriver implements GameDriver
         throw new \RuntimeException("Card ID '{$cardId}' is not numeric. Implement cardValueFromId() mapping.");
     }
 
-    private function cardImgFromValue(int $value): string
+    private function cardImgFromValue(int $value, string $faction): string
     {
-        return "/images/cards/{$value}.png";
+        return "/images/cards/{$faction}/{$value}.png";
     }
 
     private function load(string $sessionId): array
