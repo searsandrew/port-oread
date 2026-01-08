@@ -35,4 +35,14 @@ return [
         ],
     ],
 
+    'tiber' => [
+        'url' => env('TIBER_API_URL', 'https://tiber.stellarempire.space'),
+        'endpoints' => [
+            'login' => env('TIBER_LOGIN_URL', '/api/login'),
+            'register' => env('TIBER_REGISTER_URL', '/api/register'),
+            'planets' => env('TIBER_PLANETS_URL', '/api/planets'),
+            'user' => env('TIBER_USER_URL', '/api/user'),
+        ],
+    ],
+
 ];

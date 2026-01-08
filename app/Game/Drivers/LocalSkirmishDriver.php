@@ -141,7 +141,7 @@ class LocalSkirmishDriver implements GameDriver
                 'flavor' => $flavor,
                 'type' => $type,
                 'vp' => (int) $p->victoryPoints,
-                'art' => null,
+                'img' => "/images/planets/{$p->id}.png",
             ];
         }, $stagePlanets);
 

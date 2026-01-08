@@ -1,6 +1,7 @@
 <?php
 
 use App\Game\GameService;
+use App\Services\AuthSyncService;
 use Livewire\Volt\Component;
 use Illuminate\Support\Str;
 
@@ -16,6 +17,9 @@ new class extends Component
 
     public bool $showCardMenu = false;
 
+    public bool $showPlanetModal = false;
+    public ?array $selectedPlanet = null;
+
     public bool $gameOver = false;
     public ?string $endReason = null;
 
@@ -23,10 +27,24 @@ new class extends Component
     public ?string $playerFaction = null;
     public ?string $enemyFaction = null;
 
-    public function mount(GameService $game): void
+    public ?array $user = null;
+    public array $availablePlanets = [];
+
+    public function mount(GameService $game, AuthSyncService $authSync): void
     {
         $this->sessionId ??= (string) Str::uuid();
         $this->applySnapshot($game->snapshot($this->sessionId));
+
+        $this->user = $authSync->getUser();
+        $this->availablePlanets = $authSync->getPlanets();
+    }
+
+    public function sync(AuthSyncService $authSync): void
+    {
+        if ($authSync->syncPlanets()) {
+            $this->availablePlanets = $authSync->getPlanets();
+            $this->dispatch('planets-synced');
+        }
     }
 
     private function applySnapshot(array $snapshot): void
@@ -66,6 +84,19 @@ new class extends Component
     public function closeCardMenu(): void
     {
         $this->showCardMenu = false;
+        $this->dispatch('modal-closed');
+    }
+
+    public function openPlanetModal(string $planetId): void
+    {
+        $this->selectedPlanet = collect($this->planets)->firstWhere('id', $planetId);
+        $this->showPlanetModal = true;
+    }
+
+    public function closePlanetModal(): void
+    {
+        $this->showPlanetModal = false;
+        $this->selectedPlanet = null;
         $this->dispatch('modal-closed');
     }
 
@@ -178,6 +209,31 @@ new class extends Component
     @endif
     {{-- HUD --}}
     <div class="px-4 pt-4 shrink-0 transition-opacity duration-300" :class="activeArea !== 'hand' && activeArea !== 'planets' ? 'opacity-50' : 'opacity-100'">
+        <div class="flex items-center justify-between mb-4">
+            @if($user)
+                <div class="flex items-center gap-3">
+                    <div class="h-8 w-8 rounded-full bg-zinc-800 border border-white/10 flex items-center justify-center overflow-hidden">
+                        <span class="text-[10px] font-bold">{{ substr($user['name'] ?? $user['email'], 0, 1) }}</span>
+                    </div>
+                    <div class="flex flex-col">
+                        <span class="text-[10px] font-bold uppercase tracking-widest text-zinc-100">{{ $user['name'] ?? 'Commander' }}</span>
+                        <span class="text-[8px] text-zinc-500 uppercase tracking-tighter">{{ count($availablePlanets) }} Planets Synced</span>
+                    </div>
+                </div>
+            @else
+                <div class="flex items-center gap-2">
+                    <flux:link :href="route('login')" class="text-[10px] uppercase tracking-widest text-zinc-500 hover:text-white transition-colors">Login to Sync</flux:link>
+                </div>
+            @endif
+
+            <div class="flex items-center gap-4">
+                <div class="h-1.5 w-1.5 rounded-full {{ $user ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-700' }}" title="{{ $user ? 'Online' : 'Offline' }}"></div>
+                <button wire:click="sync" class="text-zinc-500 hover:text-white transition-colors" wire:loading.class="animate-spin">
+                    <flux:icon.arrow-path class="size-4" />
+                </button>
+            </div>
+        </div>
+
         <div class="flex items-center justify-between">
             <div class="space-y-1">
                 <div class="text-xs text-zinc-400">Score</div>
@@ -237,24 +293,17 @@ new class extends Component
                     <div class="swiper-wrapper">
                         @foreach($planets as $planet)
                             <div class="swiper-slide" wire:key="planet-{{ $planet['id'] }}-{{ $loop->index }}">
-                                <div class="rounded-2xl border border-white/10 bg-white/5 p-4">
-                                    <div class="flex items-start justify-between gap-4">
-                                        <div class="min-w-0">
-                                            <div class="text-lg font-semibold truncate">
-                                                {{ $planet['name'] ?? '—' }}
-                                            </div>
-                                            <div class="mt-1 text-sm text-zinc-300 line-clamp-2">
-                                                {{ $planet['flavor'] ?? '' }}
-                                            </div>
-                                        </div>
+                                <div
+                                    class="relative aspect-[3/4] w-32 mx-auto rounded-2xl border border-white/10 bg-white/5 overflow-hidden cursor-pointer active:scale-95 transition-transform group"
+                                    wire:click="openPlanetModal('{{ $planet['id'] }}')"
+                                >
+                                    <img src="{{ $planet['img'] }}" class="w-full h-full object-cover grayscale-[0.2] group-hover:grayscale-0 transition-all" alt="{{ $planet['name'] }}">
 
-                                        <div class="flex gap-2 shrink-0">
-                                            <div class="h-10 w-10 rounded-full border border-white/10 bg-white/5 grid place-items-center text-xs">
-                                                {{ $planet['type'] ?? '' }}
-                                            </div>
-                                            <div class="h-10 w-10 rounded-full border border-white/10 bg-white/5 grid place-items-center text-sm font-semibold">
-                                                {{ $planet['vp'] ?? 0 }}
-                                            </div>
+                                    <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent p-3 flex flex-col justify-end">
+                                        <div class="text-[10px] font-bold text-white/90 uppercase tracking-widest truncate">{{ $planet['name'] }}</div>
+                                        <div class="flex justify-between items-center mt-1">
+                                            <div class="px-1.5 py-0.5 rounded-md bg-white/10 border border-white/10 text-[8px] text-zinc-300 uppercase">{{ $planet['type'] }}</div>
+                                            <div class="text-xs font-black text-amber-400">{{ $planet['vp'] }} VP</div>
                                         </div>
                                     </div>
                                 </div>
@@ -369,6 +418,67 @@ new class extends Component
                         </button>
                         <button class="py-6 text-lg font-medium text-zinc-400 border-l border-white/10 hover:bg-white/5 active:bg-white/10 transition-colors" wire:click="closeCardMenu">
                             CANCEL
+                        </button>
+                    </div>
+                </div>
+            @endif
+        </div>
+    </div>
+
+    {{-- Planet View Modal --}}
+    <div
+        x-cloak
+        x-show="$wire.showPlanetModal"
+        class="fixed inset-0 z-40 flex flex-col justify-end"
+    >
+        <div
+            class="absolute inset-0 bg-black/60"
+            x-show="$wire.showPlanetModal"
+            x-transition:enter="transition ease-out duration-300"
+            x-transition:enter-start="opacity-0"
+            x-transition:enter-end="opacity-100"
+            x-transition:leave="transition ease-in duration-200"
+            x-transition:leave-start="opacity-100"
+            x-transition:leave-end="opacity-0"
+            x-on:click="$wire.closePlanetModal()"
+        ></div>
+
+        <div
+            class="relative flex flex-col"
+            x-show="$wire.showPlanetModal"
+            x-transition:enter="transition ease-out duration-300"
+            x-transition:enter-start="translate-y-full"
+            x-transition:enter-end="translate-y-0"
+            x-transition:leave="transition ease-in duration-200"
+            x-transition:leave-start="translate-y-0"
+            x-transition:leave-end="translate-y-full"
+            style="will-change: transform;"
+        >
+            @if($selectedPlanet)
+                <div class="px-4">
+                    <img src="{{ $selectedPlanet['img'] }}" class="w-full rounded-t-3xl border-t border-x border-white/20 shadow-2xl" draggable="false" />
+                </div>
+
+                <div class="bg-zinc-950 border-t border-white/10 safe-area-bottom">
+                    <div class="p-6">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h2 class="text-2xl font-bold">{{ $selectedPlanet['name'] }}</h2>
+                                <p class="text-zinc-400 uppercase tracking-widest text-xs mt-1">{{ $selectedPlanet['type'] }}</p>
+                            </div>
+                            <div class="h-12 w-12 rounded-full border border-amber-400/20 bg-amber-400/10 grid place-items-center text-amber-400 font-black">
+                                {{ $selectedPlanet['vp'] }}
+                            </div>
+                        </div>
+
+                        <p class="mt-4 text-zinc-300 leading-relaxed italic">
+                            "{{ $selectedPlanet['flavor'] }}"
+                        </p>
+                    </div>
+
+                    <div class="border-t border-white/5">
+                        <button class="w-full py-6 text-lg font-medium text-zinc-400 hover:bg-white/5 active:bg-white/10 transition-colors" wire:click="closePlanetModal">
+                            CLOSE
                         </button>
                     </div>
                 </div>

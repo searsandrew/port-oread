@@ -71,6 +71,7 @@ select:focus[data-flux-control] {
 } */
 
 .space {
+    z-index: -10;
     position: fixed;
     top: 50%;
     left: 50%;

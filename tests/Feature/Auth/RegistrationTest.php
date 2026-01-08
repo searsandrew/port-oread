@@ -7,6 +7,16 @@ test('registration screen can be rendered', function () {
 });
 
 test('new users can register', function () {
+    \Illuminate\Support\Facades\Http::fake([
+        'https://tiber.stellarempire.space/api/register' => \Illuminate\Support\Facades\Http::response([
+            'token' => 'fake-token',
+            'user' => ['name' => 'John Doe', 'email' => 'test@example.com'],
+        ]),
+        'https://tiber.stellarempire.space/api/planets' => \Illuminate\Support\Facades\Http::response(['data' => []]),
+    ]);
+
+    \Native\Mobile\Facades\SecureStorage::shouldReceive('set')->andReturn(true);
+
     $response = $this->post(route('register.store'), [
         'name' => 'John Doe',
         'email' => 'test@example.com',
