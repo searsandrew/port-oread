@@ -55,6 +55,12 @@ class LocalStoreService
     {
         $this->delete('auth_token');
         $this->delete('user_data');
+
+        // Back-compat + new structure
+        $this->delete('planets');
+        $this->delete('catalog_planets');
         $this->delete('owned_planets');
+
+        $this->delete('preferences');
     }
 }

@@ -3,13 +3,13 @@
 namespace App\Services;
 
 use App\Exceptions\TiberApiException;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class TiberApiService
 {
     protected string $baseUrl;
-
     protected array $endpoints;
 
     public function __construct()
@@ -18,13 +18,48 @@ class TiberApiService
         $this->endpoints = config('services.tiber.endpoints', []);
     }
 
-    protected function getUrl(string $key): string
+    /**
+     * Supports:
+     *  - flat keys: 'login'
+     *  - dot keys:  'catalog.planets' (maps into nested arrays)
+     */
+    protected function endpoint(string $key): string
     {
-        $endpoint = $this->endpoints[$key] ?? "/api/{$key}";
+        // Exact match first
+        if (isset($this->endpoints[$key]) && is_string($this->endpoints[$key])) {
+            return $this->endpoints[$key];
+        }
 
-        return $this->baseUrl.'/'.ltrim($endpoint, '/');
+        // Dot-path lookup into nested arrays
+        $segments = explode('.', $key);
+        $cursor = $this->endpoints;
+
+        foreach ($segments as $seg) {
+            if (!is_array($cursor) || !array_key_exists($seg, $cursor)) {
+                $cursor = null;
+                break;
+            }
+            $cursor = $cursor[$seg];
+        }
+
+        if (is_string($cursor)) {
+            return $cursor;
+        }
+
+        // Fallback: treat as "/api/{key}"
+        return "/api/{$key}";
     }
 
+    protected function getUrl(string $key): string
+    {
+        $endpoint = $this->endpoint($key);
+
+        return $this->baseUrl . '/' . ltrim($endpoint, '/');
+    }
+
+    /**
+     * @throws TiberApiException
+     */
     public function login(string $email, string $password): array
     {
         try {
@@ -43,6 +78,9 @@ class TiberApiService
         }
     }
 
+    /**
+     * @throws TiberApiException
+     */
     public function register(array $data): array
     {
         try {
@@ -63,7 +101,10 @@ class TiberApiService
                     'response' => $response->body(),
                 ]);
 
-                throw new TiberApiException("The registration server encountered an error ({$response->status()}). Your account might have been created on the remote server, but we did not receive an authentication token.", $response->status());
+                throw new TiberApiException(
+                    "The registration server encountered an error ({$response->status()}). Your account might have been created on the remote server, but we did not receive an authentication token.",
+                    $response->status()
+                );
             }
 
             Log::error('Tiber API registration failed', [
@@ -90,17 +131,9 @@ class TiberApiService
         }
     }
 
-    public function getCatalogPlanets(): array
-    {
-        $response = Http::timeout(15)->acceptJson()->get($this->getUrl('catalog.planets'));
-
-        if ($response->successful()) {
-            return $response->json('data') ?? [];
-        }
-
-        throw new \Exception('Failed to fetch catalog planets');
-    }
-
+    /** Owned planets (pivot)
+     * @throws TiberApiException
+     */
     public function getPlanets(string $token): array
     {
         $response = Http::timeout(15)->withToken($token)->acceptJson()->get($this->getUrl('planets'));
@@ -109,9 +142,34 @@ class TiberApiService
             return $response->json('data') ?? $response->json();
         }
 
-        throw new \Exception('Failed to fetch planets');
+        throw new TiberApiException('Failed to fetch owned planets', $response->status());
     }
 
+    /** Full catalog planets
+     * @throws TiberApiException
+     */
+    public function getCatalogPlanets(?string $token = null): array
+    {
+        $req = Http::timeout(15)->acceptJson();
+        if ($token) {
+            $req = $req->withToken($token);
+        }
+
+        $response = $req->get($this->getUrl('catalog.planets'));
+
+        if ($response->successful()) {
+            // Your current route returns raw JSON string; Laravel will still parse it fine here.
+            $json = $response->json();
+            return $json['data'] ?? $json;
+        }
+
+        throw new TiberApiException('Failed to fetch catalog planets', $response->status());
+    }
+
+    /**
+     * @throws TiberApiException
+     * @throws ConnectionException
+     */
     public function getUserDetails(string $token): array
     {
         $response = Http::timeout(15)->withToken($token)->acceptJson()->get($this->getUrl('user'));
@@ -120,6 +178,13 @@ class TiberApiService
             return $response->json();
         }
 
-        throw new \Exception('Failed to fetch user details');
+        throw new TiberApiException('Failed to fetch user details', $response->status());
+    }
+
+    public function logout(string $token): bool
+    {
+        $response = Http::timeout(15)->withToken($token)->acceptJson()->post($this->getUrl('logout'));
+
+        return $response->successful();
     }
 }
