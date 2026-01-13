@@ -1,8 +1,10 @@
 <?php
 
+use App\Exceptions\TiberApiException;
 use App\Services\AuthSyncService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rules;
 use Livewire\Volt\Component;
 
@@ -15,42 +17,67 @@ new class extends Component
 
     public function register(AuthSyncService $authSync): void
     {
+        Log::info('Registration started for: '.$this->email);
+
         $this->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255'],
             'password' => ['required', 'string', 'confirmed', Rules\Password::defaults()],
         ]);
 
+        $apiRegistered = false;
+
         try {
+            Log::info('Attempting API registration for: '.$this->email);
             // Attempt API registration
-            $success = $authSync->register([
+            $apiRegistered = $authSync->register([
                 'name' => $this->name,
                 'email' => $this->email,
                 'password' => $this->password,
                 'password_confirmation' => $this->password_confirmation,
             ]);
 
-            if (! $success) {
-                throw new \Exception('The registration server did not return an authentication token.');
+            if (! $apiRegistered) {
+                Log::warning('API registration returned false (no token) for: '.$this->email);
+                throw new TiberApiException('The registration server did not return an authentication token.', 0);
+            }
+            Log::info('API registration successful for: '.$this->email);
+        } catch (TiberApiException $e) {
+            if (! $e->isValidationError()) {
+                Log::warning('Registration API error ('.$e->getStatus().'), but proceeding with local user creation: '.$e->getMessage());
+                session()->flash('status', 'Account created locally. The online server is currently unreachable or having issues, so some features may be limited until you can sync.');
+            } else {
+                Log::error('Registration API validation error: '.$e->getMessage());
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'email' => __('Registration failed: ').$e->getMessage(),
+                ]);
             }
         } catch (\Exception $e) {
-            throw \Illuminate\Validation\ValidationException::withMessages([
-                'email' => __('Registration failed: ').$e->getMessage(),
-            ]);
+            Log::error('Unexpected API registration error: '.$e->getMessage(), ['exception' => $e]);
+            Log::warning('Proceeding with local user creation after unexpected error.');
+            session()->flash('status', 'Account created locally due to a technical issue with the sync server.');
         }
 
-        // Only create local user if API registration succeeded
-        $user = \App\Models\User::updateOrCreate(
-            ['email' => $this->email],
-            [
-                'name' => $this->name,
-                'password' => $this->password,
-            ]
-        );
+        try {
+            Log::info('Creating local user for: '.$this->email);
+            // Create local user
+            $user = \App\Models\User::updateOrCreate(
+                ['email' => $this->email],
+                [
+                    'name' => $this->name,
+                    'password' => $this->password,
+                ]
+            );
+            Log::info('Local user created/updated: '.$user->id);
 
-        Auth::login($user);
+            Auth::login($user);
+            Log::info('User logged in locally: '.$user->id);
 
-        $this->redirect(route('dashboard', absolute: false), navigate: true);
+            $this->redirect(route('dashboard', absolute: false), navigate: true);
+        } catch (\Exception $e) {
+            Log::error('Failed to create local user: '.$e->getMessage(), ['exception' => $e]);
+            throw $e;
+        }
     }
 }; ?>
 
@@ -106,8 +133,9 @@ new class extends Component
             />
 
             <div class="flex items-center justify-end">
-                <flux:button type="submit" variant="primary" class="w-full" data-test="register-user-button">
-                    {{ __('Create account') }}
+                <flux:button type="submit" variant="primary" class="w-full" data-test="register-user-button" wire:loading.attr="disabled">
+                    <span wire:loading.remove wire:target="register">{{ __('Create account') }}</span>
+                    <span wire:loading wire:target="register">{{ __('Creating account...') }}</span>
                 </flux:button>
             </div>
         </form>

@@ -3,6 +3,7 @@
 use App\Services\AuthSyncService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use Livewire\Volt\Component;
 
@@ -14,30 +15,48 @@ new class extends Component
 
     public function login(AuthSyncService $authSync): void
     {
+        Log::info('Login attempt for: '.$this->email);
+
         $this->validate([
             'email' => ['required', 'string', 'email'],
             'password' => ['required', 'string'],
         ]);
 
-        // Attempt sync login (handles both API and local fallback)
-        if ($authSync->login($this->email, $this->password)) {
-            $userData = $authSync->getUser();
+        // 1) Try API login first
+        try {
+            if ($authSync->login($this->email, $this->password)) {
+                $userData = $authSync->getUser();
+                Log::info('Sync login successful for: '.$this->email);
 
-            $user = \App\Models\User::updateOrCreate(
-                ['email' => $this->email],
-                [
-                    'name' => $userData['name'] ?? 'Commander',
-                    'password' => $this->password,
-                ]
-            );
+                $user = \App\Models\User::updateOrCreate(
+                    ['email' => $this->email],
+                    [
+                        'name' => $userData['name'] ?? 'Commander',
+                        'password' => $this->password, // hashed cast on model will hash :contentReference[oaicite:6]{index=6}
+                    ]
+                );
 
-            Auth::login($user, $this->remember);
+                Auth::login($user, $this->remember);
+                session()->regenerate();
 
+                $this->redirectIntended(default: route('dashboard', absolute: false), navigate: true);
+                return;
+            }
+        } catch (\Throwable $e) {
+            Log::error('API login error: '.$e->getMessage(), ['exception' => $e]);
+            session()->flash('status', 'Online sync is unavailable right now — attempting offline login.');
+        }
+
+        // 2) Fallback: local/offline login
+        if (Auth::attempt(['email' => $this->email, 'password' => $this->password], $this->remember)) {
             session()->regenerate();
+            Log::info('Offline login successful for: '.$this->email);
+
             $this->redirectIntended(default: route('dashboard', absolute: false), navigate: true);
             return;
         }
 
+        Log::warning('Login failed for: '.$this->email);
         throw ValidationException::withMessages([
             'email' => __('auth.failed'),
         ]);

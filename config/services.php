@@ -42,6 +42,9 @@ return [
             'register' => env('TIBER_REGISTER_URL', '/api/register'),
             'planets' => env('TIBER_PLANETS_URL', '/api/planets'),
             'user' => env('TIBER_USER_URL', '/api/user'),
+            'catalog' => [
+                'planets' => env('TIBER_CATALOG_PLANETS_URL', '/api/catalog/planets'),
+            ]
         ],
     ],
 

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 
 class AuthSyncService
@@ -13,26 +14,18 @@ class AuthSyncService
 
     public function login(string $email, string $password): bool
     {
-        try {
-            $data = $this->api->login($email, $password);
+        $data = $this->api->login($email, $password);
 
-            if (isset($data['token'])) {
-                $this->local->set('auth_token', $data['token']);
-                $this->local->set('user_data', $data['user'] ?? ['email' => $email]);
-
-                // Fetch and sync planets immediately
-                $this->syncPlanets();
-
-                return true;
-            }
-        } catch (\Exception $e) {
-            Log::warning('Online login failed: '.$e->getMessage());
-
-            // Try offline login
-            return $this->offlineLogin($email, $password);
+        if (!isset($data['token'])) {
+            return false;
         }
 
-        return false;
+        $this->local->set('auth_token', $data['token']);
+        $this->local->set('user_data', $data['user'] ?? ['email' => $email]);
+
+        $this->syncOwnedPlanets();
+
+        return true;
     }
 
     public function register(array $data): bool
@@ -51,22 +44,6 @@ class AuthSyncService
         } catch (\Exception $e) {
             Log::error('Registration failed: '.$e->getMessage());
             throw $e;
-        }
-
-        return false;
-    }
-
-    protected function offlineLogin(string $email, string $password): bool
-    {
-        $userData = $this->local->get('user_data');
-
-        if ($userData && isset($userData['email']) && $userData['email'] === $email) {
-            // In a real app, we'd want to verify a hashed password stored locally too,
-            // but for this task "be aware of our local users name, preferences, etc"
-            // suggests we just need to know who they are.
-            Log::info("Offline login successful for {$email}");
-
-            return true;
         }
 
         return false;
@@ -94,7 +71,7 @@ class AuthSyncService
 
     public function isAuthenticated(): bool
     {
-        return $this->local->get('auth_token') !== null || $this->local->get('user_data') !== null;
+        return $this->local->get('auth_token') !== null;
     }
 
     public function getUser(): ?array
