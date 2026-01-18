@@ -1,34 +1,23 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use Laravel\Fortify\Features;
 use Livewire\Volt\Volt;
+
+Volt::route('/login', 'auth.login')->name('login');
+Volt::route('/register', 'auth.register')->name('register');
+
+Volt::route('/profiles', 'profiles.index')->name('profiles.index');
+Volt::route('/profiles/create', 'profiles.create')->name('profiles.create');
+
+Route::middleware(['profile'])->group(function () {
+    Volt::route('/dashboard', 'dashboard')->name('dashboard');
+    Volt::route('/settings', 'settings.index')->name('settings.index');
+    Volt::route('/profiles/switch', 'profiles.switch')->name('profiles.switch');
+    Volt::route('/connect/disconnect', 'connect.disconnect')->name('connect.disconnect');
+
+    Volt::route('/game', 'game.table')->name('game.table');
+});
 
 Route::get('/', function () {
     return redirect()->route('dashboard');
 })->name('home');
-
-Route::view('dashboard', 'dashboard')
-    ->middleware(['auth', 'verified'])
-    ->name('dashboard');
-
-Route::middleware(['auth'])->group(function () {
-    Route::redirect('settings', 'settings/profile');
-
-    Volt::route('settings/profile', 'settings.profile')->name('profile.edit');
-    Volt::route('settings/password', 'settings.password')->name('user-password.edit');
-    Volt::route('settings/appearance', 'settings.appearance')->name('appearance.edit');
-
-    Volt::route('settings/two-factor', 'settings.two-factor')
-        ->middleware(
-            when(
-                Features::canManageTwoFactorAuthentication()
-                    && Features::optionEnabled(Features::twoFactorAuthentication(), 'confirmPassword'),
-                ['password.confirm'],
-                [],
-            ),
-        )
-        ->name('two-factor.show');
-});
-
-Volt::route('/game', 'game-table')->name('game.table');

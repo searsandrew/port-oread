@@ -148,7 +148,7 @@ return [
         |          'dark'  - Dark icons
         |
         */
-        'status_bar_style' => env('NATIVEPHP_ANDROID_STATUS_BAR_STYLE', 'auto'),
+        'status_bar_style' => env('NATIVEPHP_ANDROID_STATUS_BAR_STYLE', 'dark'),
 
         /*
         |--------------------------------------------------------------------------

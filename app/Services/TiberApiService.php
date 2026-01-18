@@ -3,13 +3,13 @@
 namespace App\Services;
 
 use App\Exceptions\TiberApiException;
-use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class TiberApiService
 {
     protected string $baseUrl;
+
     protected array $endpoints;
 
     public function __construct()
@@ -35,7 +35,7 @@ class TiberApiService
         $cursor = $this->endpoints;
 
         foreach ($segments as $seg) {
-            if (!is_array($cursor) || !array_key_exists($seg, $cursor)) {
+            if (! is_array($cursor) || ! array_key_exists($seg, $cursor)) {
                 $cursor = null;
                 break;
             }
@@ -46,20 +46,19 @@ class TiberApiService
             return $cursor;
         }
 
-        // Fallback: treat as "/api/{key}"
-        return "/api/{$key}";
+        // Fallback: treat dots as path segments: catalog.planets => /api/catalog/planets
+        $path = str_replace('.', '/', $key);
+
+        return "/api/{$path}";
     }
 
     protected function getUrl(string $key): string
     {
         $endpoint = $this->endpoint($key);
 
-        return $this->baseUrl . '/' . ltrim($endpoint, '/');
+        return $this->baseUrl.'/'.ltrim($endpoint, '/');
     }
 
-    /**
-     * @throws TiberApiException
-     */
     public function login(string $email, string $password): array
     {
         try {
@@ -78,9 +77,6 @@ class TiberApiService
         }
     }
 
-    /**
-     * @throws TiberApiException
-     */
     public function register(array $data): array
     {
         try {
@@ -115,9 +111,6 @@ class TiberApiService
             ]);
 
             $message = $response->json('message') ?? 'Registration failed';
-            if ($response->status() === 403 || $response->status() === 401) {
-                $message = "Access denied by the registration server ({$response->status()}). This might be due to a firewall or security block.";
-            }
 
             throw new TiberApiException($message, $response->status());
         } catch (TiberApiException $e) {
@@ -125,54 +118,36 @@ class TiberApiService
         } catch (\Illuminate\Http\Client\ConnectionException $e) {
             Log::error('Tiber API Connection Error: '.$e->getMessage());
             throw new TiberApiException('Could not connect to the registration server. Please check your internet connection.', 0, $e);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Log::error('Tiber API Unexpected Error: '.$e->getMessage());
             throw new TiberApiException('An unexpected error occurred while communicating with the registration server: '.$e->getMessage(), 0, $e);
         }
     }
 
-    /** Owned planets (pivot)
-     * @throws TiberApiException
+    /**
+     * Authenticated: returns the user's owned planets.
+     * Expected to be /api/planets on Tiber.
      */
     public function getPlanets(string $token): array
     {
-        $response = Http::timeout(15)->withToken($token)->acceptJson()->get($this->getUrl('planets'));
+        $response = Http::timeout(15)
+            ->withToken($token)
+            ->acceptJson()
+            ->get($this->getUrl('planets'));
 
         if ($response->successful()) {
-            return $response->json('data') ?? $response->json();
+            return $response->json();
         }
 
-        throw new TiberApiException('Failed to fetch owned planets', $response->status());
+        throw new TiberApiException('Failed to fetch planets', $response->status());
     }
 
-    /** Full catalog planets
-     * @throws TiberApiException
-     */
-    public function getCatalogPlanets(?string $token = null): array
-    {
-        $req = Http::timeout(15)->acceptJson();
-        if ($token) {
-            $req = $req->withToken($token);
-        }
-
-        $response = $req->get($this->getUrl('catalog.planets'));
-
-        if ($response->successful()) {
-            // Your current route returns raw JSON string; Laravel will still parse it fine here.
-            $json = $response->json();
-            return $json['data'] ?? $json;
-        }
-
-        throw new TiberApiException('Failed to fetch catalog planets', $response->status());
-    }
-
-    /**
-     * @throws TiberApiException
-     * @throws ConnectionException
-     */
     public function getUserDetails(string $token): array
     {
-        $response = Http::timeout(15)->withToken($token)->acceptJson()->get($this->getUrl('user'));
+        $response = Http::timeout(15)
+            ->withToken($token)
+            ->acceptJson()
+            ->get($this->getUrl('user'));
 
         if ($response->successful()) {
             return $response->json();
@@ -181,10 +156,18 @@ class TiberApiService
         throw new TiberApiException('Failed to fetch user details', $response->status());
     }
 
-    public function logout(string $token): bool
+    /**
+     * Public: planet catalog for offline caching.
+     * GET /api/catalog/planets
+     */
+    public function getCatalogPlanets(): array
     {
-        $response = Http::timeout(15)->withToken($token)->acceptJson()->post($this->getUrl('logout'));
+        $response = Http::timeout(15)->acceptJson()->get($this->getUrl('catalog.planets'));
 
-        return $response->successful();
+        if ($response->successful()) {
+            return $response->json();
+        }
+
+        throw new TiberApiException('Failed to fetch planet catalog', $response->status());
     }
 }

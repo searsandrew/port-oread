@@ -2,11 +2,11 @@
 
 use App\Game\GameService;
 use App\Services\AuthSyncService;
+use App\Services\CurrentProfile;
 use Livewire\Volt\Component;
 use Illuminate\Support\Str;
 
-new class extends Component
-{
+new class extends Component {
     public ?string $sessionId = null;
     public string $playerId = '1';
 
@@ -30,12 +30,19 @@ new class extends Component
     public ?array $user = null;
     public array $availablePlanets = [];
 
-    public function mount(GameService $game, AuthSyncService $authSync): void
+    public function mount(GameService $game, AuthSyncService $authSync, \App\Services\CurrentProfile $current): void
     {
         $this->sessionId ??= (string) Str::uuid();
         $this->applySnapshot($game->snapshot($this->sessionId));
 
-        $this->user = $authSync->getUser();
+        // Ensure local catalog exists (offline-first)
+        if (empty($authSync->getPlanets())) {
+            $authSync->syncPlanets(force: true);
+        }
+
+        $profile = $current->get();
+        $this->user = $profile ? $authSync->userDataFor($profile) : null;
+
         $this->availablePlanets = $authSync->getPlanets();
     }
 
@@ -66,7 +73,7 @@ new class extends Component
         $this->selectedCardId = $snapshot['selectedCardId']
             ?? ($this->hand[0]['id'] ?? null);
 
-        $this->gameOver = (bool) ($snapshot['gameOver'] ?? false);
+        $this->gameOver = (bool)($snapshot['gameOver'] ?? false);
         $this->endReason = $snapshot['endReason'] ?? null;
     }
 
@@ -124,7 +131,7 @@ new class extends Component
 
     public function newGame(GameService $game): void
     {
-        $this->sessionId = (string) Str::uuid();
+        $this->sessionId = (string)Str::uuid();
         $this->isSelectingFaction = true;
         $this->gameOver = false;
         $this->endReason = null;
@@ -195,41 +202,54 @@ new class extends Component
                         wire:click="selectFaction('{{ $faction }}')"
                         class="group relative flex flex-col items-center p-8 rounded-[2rem] border border-white/10 bg-white/5 hover:bg-white/10 transition-all hover:-translate-y-2 active:scale-95"
                     >
-                        <div class="w-40 aspect-[3/4] mb-6 rounded-2xl overflow-hidden border border-white/20 shadow-2xl">
-                            <img src="/images/cards/{{ $faction }}/1.png" class="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-500" alt="{{ ucfirst($faction) }}">
+                        <div
+                            class="w-40 aspect-[3/4] mb-6 rounded-2xl overflow-hidden border border-white/20 shadow-2xl">
+                            <img src="{{ asset('/images/cards/' . $faction . '/1.png') }}"
+                                 class="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-500"
+                                 alt="{{ ucfirst($faction) }}">
                         </div>
                         <h2 class="text-2xl font-black uppercase tracking-tighter italic">{{ $faction }}</h2>
-                        <div class="mt-2 h-1 w-8 bg-white/20 group-hover:w-16 group-hover:bg-white transition-all duration-500"></div>
+                        <div
+                            class="mt-2 h-1 w-8 bg-white/20 group-hover:w-16 group-hover:bg-white transition-all duration-500"></div>
                     </button>
                 @endforeach
             </div>
 
-            <p class="mt-16 text-xs text-zinc-500 uppercase tracking-widest animate-pulse">Awaiting faction authorization...</p>
+            <p class="mt-16 text-xs text-zinc-500 uppercase tracking-widest animate-pulse">Awaiting faction
+                authorization...</p>
         </div>
     @endif
     {{-- HUD --}}
-    <div class="px-4 pt-4 shrink-0 transition-opacity duration-300" :class="activeArea !== 'hand' && activeArea !== 'planets' ? 'opacity-50' : 'opacity-100'">
+    <div class="px-4 pt-4 shrink-0 transition-opacity duration-300"
+         :class="activeArea !== 'hand' && activeArea !== 'planets' ? 'opacity-50' : 'opacity-100'">
         <div class="flex items-center justify-between mb-4">
             @if($user)
                 <div class="flex items-center gap-3">
-                    <div class="h-8 w-8 rounded-full bg-zinc-800 border border-white/10 flex items-center justify-center overflow-hidden">
+                    <div
+                        class="h-8 w-8 rounded-full bg-zinc-800 border border-white/10 flex items-center justify-center overflow-hidden">
                         <span class="text-[10px] font-bold">{{ substr($user['name'] ?? $user['email'], 0, 1) }}</span>
                     </div>
                     <div class="flex flex-col">
-                        <span class="text-[10px] font-bold uppercase tracking-widest text-zinc-100">{{ $user['name'] ?? 'Commander' }}</span>
+                        <span
+                            class="text-[10px] font-bold uppercase tracking-widest text-zinc-100">{{ $user['name'] ?? 'Commander' }}</span>
                         <span class="text-[8px] text-zinc-500 uppercase tracking-tighter">{{ count($availablePlanets) }} Planets Synced</span>
                     </div>
                 </div>
             @else
                 <div class="flex items-center gap-2">
-                    <flux:link :href="route('login')" class="text-[10px] uppercase tracking-widest text-zinc-500 hover:text-white transition-colors">Login to Sync</flux:link>
+                    <flux:link :href="route('login')"
+                               class="text-[10px] uppercase tracking-widest text-zinc-500 hover:text-white transition-colors">
+                        Login to Sync
+                    </flux:link>
                 </div>
             @endif
 
             <div class="flex items-center gap-4">
-                <div class="h-1.5 w-1.5 rounded-full {{ $user ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-700' }}" title="{{ $user ? 'Online' : 'Offline' }}"></div>
-                <button wire:click="sync" class="text-zinc-500 hover:text-white transition-colors" wire:loading.class="animate-spin">
-                    <flux:icon.arrow-path class="size-4" />
+                <div class="h-1.5 w-1.5 rounded-full {{ $user ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-700' }}"
+                     title="{{ $user ? 'Online' : 'Offline' }}"></div>
+                <button wire:click="sync" class="text-zinc-500 hover:text-white transition-colors"
+                        wire:loading.class="animate-spin">
+                    <flux:icon.arrow-path class="size-4"/>
                 </button>
             </div>
         </div>
@@ -297,12 +317,18 @@ new class extends Component
                                     class="relative aspect-[3/4] w-32 mx-auto rounded-2xl border border-white/10 bg-white/5 overflow-hidden cursor-pointer active:scale-95 transition-transform group"
                                     wire:click="openPlanetModal('{{ $planet['id'] }}')"
                                 >
-                                    <img src="{{ $planet['img'] }}" class="w-full h-full object-cover grayscale-[0.2] group-hover:grayscale-0 transition-all" alt="{{ $planet['name'] }}">
+                                    <span class="text-white">{{ $planet['img'] }}</span>
+                                    <img src="{{ asset($planet['img']) }}"
+                                         class="w-full h-full object-cover grayscale-[0.2] group-hover:grayscale-0 transition-all"
+                                         alt="{{ $planet['name'] }}">
 
-                                    <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent p-3 flex flex-col justify-end">
-                                        <div class="text-[10px] font-bold text-white/90 uppercase tracking-widest truncate">{{ $planet['name'] }}</div>
+                                    <div
+                                        class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent p-3 flex flex-col justify-end">
+                                        <div
+                                            class="text-[10px] font-bold text-white/90 uppercase tracking-widest truncate">{{ $planet['name'] }}</div>
                                         <div class="flex justify-between items-center mt-1">
-                                            <div class="px-1.5 py-0.5 rounded-md bg-white/10 border border-white/10 text-[8px] text-zinc-300 uppercase">{{ $planet['type'] }}</div>
+                                            <div
+                                                class="px-1.5 py-0.5 rounded-md bg-white/10 border border-white/10 text-[8px] text-zinc-300 uppercase">{{ $planet['type'] }}</div>
                                             <div class="text-xs font-black text-amber-400">{{ $planet['vp'] }} VP</div>
                                         </div>
                                     </div>
@@ -341,14 +367,15 @@ new class extends Component
                             <div class="select-none">
                                 <div class="relative">
                                     <img
-                                        src="{{ $card['img'] }}"
+                                        src="{{ asset($card['img']) }}"
                                         class="block w-full h-auto rounded-2xl border border-white/10"
                                         draggable="false"
                                     />
 
                                     {{-- merc pip --}}
                                     @if(($card['isMerc'] ?? false) === true)
-                                        <div class="absolute top-2 right-2 h-3 w-3 rounded-full border border-white/30 bg-white/20"></div>
+                                        <div
+                                            class="absolute top-2 right-2 h-3 w-3 rounded-full border border-white/30 bg-white/20"></div>
                                     @endif
                                 </div>
                             </div>
@@ -357,8 +384,10 @@ new class extends Component
                 </div>
             </div>
 
-            <div class="pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-zinc-950 to-transparent z-10"></div>
-            <div class="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-zinc-950 to-transparent z-10"></div>
+            <div
+                class="pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-zinc-950 to-transparent z-10"></div>
+            <div
+                class="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-zinc-950 to-transparent z-10"></div>
         </div>
     </div>
 
@@ -395,7 +424,8 @@ new class extends Component
 
             @if($selected)
                 <div class="px-4">
-                    <img src="{{ $selected['img'] }}" class="w-full rounded-t-3xl border-t border-x border-white/20 shadow-2xl" draggable="false" />
+                    <img src="{{ $selected['img'] }}"
+                         class="w-full rounded-t-3xl border-t border-x border-white/20 shadow-2xl" draggable="false"/>
                 </div>
 
                 <div class="bg-zinc-950 border-t border-white/10 safe-area-bottom">
@@ -413,10 +443,13 @@ new class extends Component
                     @endif
 
                     <div class="grid grid-cols-2">
-                        <button class="py-6 text-lg font-bold hover:bg-white/5 active:bg-white/10 transition-colors" wire:click="playSelected">
+                        <button class="py-6 text-lg font-bold hover:bg-white/5 active:bg-white/10 transition-colors"
+                                wire:click="playSelected">
                             PLAY
                         </button>
-                        <button class="py-6 text-lg font-medium text-zinc-400 border-l border-white/10 hover:bg-white/5 active:bg-white/10 transition-colors" wire:click="closeCardMenu">
+                        <button
+                            class="py-6 text-lg font-medium text-zinc-400 border-l border-white/10 hover:bg-white/5 active:bg-white/10 transition-colors"
+                            wire:click="closeCardMenu">
                             CANCEL
                         </button>
                     </div>
@@ -456,7 +489,8 @@ new class extends Component
         >
             @if($selectedPlanet)
                 <div class="px-4">
-                    <img src="{{ $selectedPlanet['img'] }}" class="w-full rounded-t-3xl border-t border-x border-white/20 shadow-2xl" draggable="false" />
+                    <img src="{{ $selectedPlanet['img'] }}"
+                         class="w-full rounded-t-3xl border-t border-x border-white/20 shadow-2xl" draggable="false"/>
                 </div>
 
                 <div class="bg-zinc-950 border-t border-white/10 safe-area-bottom">
@@ -466,7 +500,8 @@ new class extends Component
                                 <h2 class="text-2xl font-bold">{{ $selectedPlanet['name'] }}</h2>
                                 <p class="text-zinc-400 uppercase tracking-widest text-xs mt-1">{{ $selectedPlanet['type'] }}</p>
                             </div>
-                            <div class="h-12 w-12 rounded-full border border-amber-400/20 bg-amber-400/10 grid place-items-center text-amber-400 font-black">
+                            <div
+                                class="h-12 w-12 rounded-full border border-amber-400/20 bg-amber-400/10 grid place-items-center text-amber-400 font-black">
                                 {{ $selectedPlanet['vp'] }}
                             </div>
                         </div>
@@ -477,7 +512,9 @@ new class extends Component
                     </div>
 
                     <div class="border-t border-white/5">
-                        <button class="w-full py-6 text-lg font-medium text-zinc-400 hover:bg-white/5 active:bg-white/10 transition-colors" wire:click="closePlanetModal">
+                        <button
+                            class="w-full py-6 text-lg font-medium text-zinc-400 hover:bg-white/5 active:bg-white/10 transition-colors"
+                            wire:click="closePlanetModal">
                             CLOSE
                         </button>
                     </div>
@@ -532,12 +569,17 @@ new class extends Component
                         class="absolute w-40 aspect-[3/4] transition-all duration-1000"
                         :class="$store.battle.shattered === 'enemy' ? 'z-30 scale-125 translate-x-0' : ($store.battle.shattered === 'player' ? 'opacity-0 scale-50 -translate-x-24' : '-translate-x-24')"
                     >
-                        <div class="shatter-container rounded-2xl overflow-hidden" :class="{ 'winner-highlight': $store.battle.outcome === 'win', 'shattered': $store.battle.shattered === 'player' }">
+                        <div class="shatter-container rounded-2xl overflow-hidden"
+                             :class="{ 'winner-highlight': $store.battle.outcome === 'win', 'shattered': $store.battle.shattered === 'player' }">
                             <template x-for="i in 16">
-                                <div class="shatter-piece" :style="getShatterStyle(i-1) + '; background-image: url(' + $store.battle.playerImg + ');'"></div>
+                                <div class="shatter-piece"
+                                     :style="getShatterStyle(i-1) + '; background-image: url(' + $store.battle.playerImg + ');'"></div>
                             </template>
                         </div>
-                        <div x-show="$store.battle.outcome === 'win'" class="absolute -top-4 -left-4 bg-white text-black px-2 py-1 text-[10px] font-bold uppercase rounded z-20">Winner</div>
+                        <div x-show="$store.battle.outcome === 'win'"
+                             class="absolute -top-4 -left-4 bg-white text-black px-2 py-1 text-[10px] font-bold uppercase rounded z-20">
+                            Winner
+                        </div>
                     </div>
 
                     {{-- Enemy Card --}}
@@ -545,19 +587,30 @@ new class extends Component
                         class="absolute w-40 aspect-[3/4] transition-all duration-1000"
                         :class="$store.battle.shattered === 'player' ? 'z-30 scale-125 translate-x-0' : ($store.battle.shattered === 'enemy' ? 'opacity-0 scale-50 translate-x-24' : 'translate-x-24')"
                     >
-                        <div class="shatter-container rounded-2xl overflow-hidden" :class="{ 'winner-highlight': $store.battle.outcome === 'loss', 'shattered': $store.battle.shattered === 'enemy' }">
+                        <div class="shatter-container rounded-2xl overflow-hidden"
+                             :class="{ 'winner-highlight': $store.battle.outcome === 'loss', 'shattered': $store.battle.shattered === 'enemy' }">
                             <template x-for="i in 16">
-                                <div class="shatter-piece" :style="getShatterStyle(i-1) + '; background-image: url(' + $store.battle.enemyImg + ');'"></div>
+                                <div class="shatter-piece"
+                                     :style="getShatterStyle(i-1) + '; background-image: url(' + $store.battle.enemyImg + ');'"></div>
                             </template>
                         </div>
-                        <div x-show="$store.battle.outcome === 'loss'" class="absolute -top-4 -right-4 bg-white text-black px-2 py-1 text-[10px] font-bold uppercase rounded z-20">Winner</div>
+                        <div x-show="$store.battle.outcome === 'loss'"
+                             class="absolute -top-4 -right-4 bg-white text-black px-2 py-1 text-[10px] font-bold uppercase rounded z-20">
+                            Winner
+                        </div>
                     </div>
                 </div>
 
                 <div class="mt-12 text-center">
-                    <div x-show="$store.battle.outcome === 'win'" class="text-2xl font-bold text-white tracking-tight">VICTORY</div>
-                    <div x-show="$store.battle.outcome === 'loss'" class="text-2xl font-bold text-zinc-500 tracking-tight">DEFEAT</div>
-                    <div x-show="$store.battle.outcome === 'tie'" class="text-2xl font-bold text-amber-400 tracking-tight animate-bounce">TIE!</div>
+                    <div x-show="$store.battle.outcome === 'win'" class="text-2xl font-bold text-white tracking-tight">
+                        VICTORY
+                    </div>
+                    <div x-show="$store.battle.outcome === 'loss'"
+                         class="text-2xl font-bold text-zinc-500 tracking-tight">DEFEAT
+                    </div>
+                    <div x-show="$store.battle.outcome === 'tie'"
+                         class="text-2xl font-bold text-amber-400 tracking-tight animate-bounce">TIE!
+                    </div>
 
                     <div class="mt-2 text-sm text-zinc-400 h-10 flex items-center justify-center">
                         <span x-text="$store.battle.message"></span>
@@ -571,7 +624,8 @@ new class extends Component
                         x-on:click="$store.battle.accept()"
                     >
                         <span class="relative z-10">CONTINUE</span>
-                        <div class="absolute inset-0 bg-zinc-200 translate-y-full group-hover:translate-y-0 transition-transform"></div>
+                        <div
+                            class="absolute inset-0 bg-zinc-200 translate-y-full group-hover:translate-y-0 transition-transform"></div>
                     </button>
                 </div>
             </div>
@@ -632,8 +686,8 @@ new class extends Component
                         if (!e) return;
 
                         this.playerImg = e.player?.img || '';
-                        this.enemyImg  = e.enemy?.img  || '';
-                        this.outcome   = e.outcome || 'tie';
+                        this.enemyImg = e.enemy?.img || '';
+                        this.outcome = e.outcome || 'tie';
                         this.planetMove = e.planetMove || 'none';
                         this.shattered = null;
                         this.potEscalated = (this.outcome === 'tie');
@@ -717,7 +771,7 @@ new class extends Component
                         this.potEscalated = false;
 
                         window.dispatchEvent(new CustomEvent('battle-accepted', {
-                            detail: { planetMove: move, potEscalated: escalated }
+                            detail: {planetMove: move, potEscalated: escalated}
                         }));
                     }
                 });
@@ -787,8 +841,8 @@ new class extends Component
                     spaceBetween: 10,
                     grabCursor: true,
                     simulateTouch: true,
-                    keyboard: { enabled: true },
-                    mousewheel: { forceToAxis: true },
+                    keyboard: {enabled: true},
+                    mousewheel: {forceToAxis: true},
 
                     // clickable dots
                     pagination: {

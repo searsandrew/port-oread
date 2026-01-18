@@ -7,19 +7,29 @@ use Native\Mobile\Facades\SecureStorage;
 
 class LocalStoreService
 {
+    private function cacheKey(string $key): string
+    {
+        return "local_store_{$key}";
+    }
+
+    private function profileKey(string $profileId, string $key): string
+    {
+        return "profile:{$profileId}:{$key}";
+    }
+
     public function set(string $key, mixed $value): bool
     {
         try {
             $stringValue = is_string($value) ? $value : json_encode($value);
 
-            // Always sync to cache as fallback for non-native environments
-            cache()->put("local_store_{$key}", $value, now()->addDays(30));
+            // Cache fallback (also useful for non-native / web dev)
+            cache()->put($this->cacheKey($key), $value, now()->addDays(30));
 
             return SecureStorage::set($key, $stringValue);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Log::warning("SecureStorage failed for key {$key}, using cache fallback: ".$e->getMessage());
 
-            return true; // We synced to cache, so consider it "success" for the flow
+            return true;
         }
     }
 
@@ -29,38 +39,81 @@ class LocalStoreService
             $value = SecureStorage::get($key);
 
             if ($value === null) {
-                return cache()->get("local_store_{$key}", $default);
+                return cache()->get($this->cacheKey($key), $default);
             }
 
             $decoded = json_decode($value, true);
 
             return (json_last_error() === JSON_ERROR_NONE) ? $decoded : $value;
-        } catch (\Exception $e) {
-            return cache()->get("local_store_{$key}", $default);
+        } catch (\Throwable $e) {
+            return cache()->get($this->cacheKey($key), $default);
         }
     }
 
     public function delete(string $key): bool
     {
-        cache()->forget("local_store_{$key}");
+        cache()->forget($this->cacheKey($key));
 
         try {
             return SecureStorage::delete($key);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             return false;
         }
     }
 
+    // ----------------------------
+    // Profile-scoped helpers
+    // ----------------------------
+
+    public function setForProfile(string $profileId, string $key, mixed $value): bool
+    {
+        return $this->set($this->profileKey($profileId, $key), $value);
+    }
+
+    public function getForProfile(string $profileId, string $key, mixed $default = null): mixed
+    {
+        return $this->get($this->profileKey($profileId, $key), $default);
+    }
+
+    public function deleteForProfile(string $profileId, string $key): bool
+    {
+        return $this->delete($this->profileKey($profileId, $key));
+    }
+
+    public function migrateLegacyAuthToProfile(string $profileId): void
+    {
+        $profileToken = $this->getForProfile($profileId, 'auth_token');
+        $legacyToken = $this->get('auth_token');
+
+        if (! $profileToken && $legacyToken) {
+            $this->setForProfile($profileId, 'auth_token', $legacyToken);
+            $this->delete('auth_token');
+        }
+
+        $profileUser = $this->getForProfile($profileId, 'user_data');
+        $legacyUser = $this->get('user_data');
+
+        if (! $profileUser && $legacyUser) {
+            $this->setForProfile($profileId, 'user_data', $legacyUser);
+            $this->delete('user_data');
+        }
+    }
+
+    public function disconnectProfile(string $profileId): void
+    {
+        $this->deleteForProfile($profileId, 'auth_token');
+        $this->deleteForProfile($profileId, 'user_data');
+        $this->deleteForProfile($profileId, 'owned_planet_ids');
+        $this->deleteForProfile($profileId, 'owned_planets_last_synced_at');
+    }
+
     public function clear(): void
     {
+        // legacy clear (safe)
         $this->delete('auth_token');
         $this->delete('user_data');
-
-        // Back-compat + new structure
-        $this->delete('planets');
-        $this->delete('catalog_planets');
-        $this->delete('owned_planets');
-
         $this->delete('preferences');
+        $this->delete('planets_last_updated_at');
+        $this->delete('planets_last_synced_at');
     }
 }

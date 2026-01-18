@@ -1,11 +1,15 @@
 <?php
 
+use App\Models\User;
 use App\Services\AuthSyncService;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Str;
 use Livewire\Volt\Component;
+
+use function Livewire\Volt\layout;
+
+layout('components.layouts.auth.card');
 
 new class extends Component
 {
@@ -15,107 +19,58 @@ new class extends Component
 
     public function login(AuthSyncService $authSync): void
     {
-        Log::info('Login attempt for: '.$this->email);
-
         $this->validate([
             'email' => ['required', 'string', 'email'],
             'password' => ['required', 'string'],
         ]);
 
-        // 1) Try API login first
+        // Ensure there is a local profile for this email
+        $profile = User::firstOrCreate(
+            ['email' => $this->email],
+            [
+                'name' => 'Commander',
+                'password' => Str::random(64),
+            ]
+        );
+
+        Auth::login($profile, $this->remember);
+        session()->regenerate();
+
         try {
-            if ($authSync->login($this->email, $this->password)) {
-                $userData = $authSync->getUser();
-                Log::info('Sync login successful for: '.$this->email);
+            $ok = $authSync->connectLogin($profile, $this->email, $this->password);
 
-                $user = \App\Models\User::updateOrCreate(
-                    ['email' => $this->email],
-                    [
-                        'name' => $userData['name'] ?? 'Commander',
-                        'password' => $this->password, // hashed cast on model will hash :contentReference[oaicite:6]{index=6}
-                    ]
-                );
-
-                Auth::login($user, $this->remember);
-                session()->regenerate();
-
-                $this->redirectIntended(default: route('dashboard', absolute: false), navigate: true);
-                return;
-            }
+            session()->flash('status', $ok ? 'Account connected!' : 'Logged into local profile. Connect failed—try again later.');
         } catch (\Throwable $e) {
-            Log::error('API login error: '.$e->getMessage(), ['exception' => $e]);
-            session()->flash('status', 'Online sync is unavailable right now — attempting offline login.');
+            Log::error('Tiber login/connect failed: '.$e->getMessage(), ['exception' => $e]);
+            session()->flash('status', 'Logged into local profile. Connect failed—try again later.');
         }
 
-        // 2) Fallback: local/offline login
-        if (Auth::attempt(['email' => $this->email, 'password' => $this->password], $this->remember)) {
-            session()->regenerate();
-            Log::info('Offline login successful for: '.$this->email);
-
-            $this->redirectIntended(default: route('dashboard', absolute: false), navigate: true);
-            return;
-        }
-
-        Log::warning('Login failed for: '.$this->email);
-        throw ValidationException::withMessages([
-            'email' => __('auth.failed'),
-        ]);
+        $this->redirectIntended(default: route('dashboard', absolute: false), navigate: true);
     }
 }; ?>
 
-<x-layouts.auth>
-    <div class="flex flex-col gap-6">
-        <x-auth-header :title="__('Log in to your account')" :description="__('Enter your email and password below to log in')" />
+<div class="flex flex-col gap-6">
+    <x-auth-header :title="__('Connect your account')" :description="__('Connect to sync purchases, fleets, and stats.')" />
 
-        <!-- Session Status -->
-        <x-auth-session-status class="text-center" :status="session('status')" />
+    <x-auth-session-status class="text-center" :status="session('status')" />
 
-        <form wire:submit="login" class="flex flex-col gap-6">
-            <!-- Email Address -->
-            <flux:input
-                wire:model="email"
-                :label="__('Email address')"
-                type="email"
-                required
-                autofocus
-                autocomplete="email"
-                placeholder="email@example.com"
-            />
+    <form wire:submit.prevent="login" method="POST" class="flex flex-col gap-6">
+        @csrf
 
-            <!-- Password -->
-            <div class="relative">
-                <flux:input
-                    wire:model="password"
-                    :label="__('Password')"
-                    type="password"
-                    required
-                    autocomplete="current-password"
-                    :placeholder="__('Password')"
-                    viewable
-                />
+        <flux:input wire:model="email" :label="__('Email address')" type="email" required autofocus autocomplete="email" placeholder="email@example.com" />
 
-                @if (Route::has('password.request'))
-                    <flux:link class="absolute top-0 text-sm end-0" :href="route('password.request')" wire:navigate>
-                        {{ __('Forgot your password?') }}
-                    </flux:link>
-                @endif
-            </div>
+        <flux:input wire:model="password" :label="__('Password')" type="password" required autocomplete="current-password" :placeholder="__('Password')" viewable />
 
-            <!-- Remember Me -->
-            <flux:checkbox wire:model="remember" :label="__('Remember me')" />
+        <flux:checkbox wire:model="remember" :label="__('Remember this profile on this device')" />
 
-            <div class="flex items-center justify-end">
-                <flux:button variant="primary" type="submit" class="w-full" data-test="login-button">
-                    {{ __('Log in') }}
-                </flux:button>
-            </div>
-        </form>
+        <flux:button variant="primary" type="submit" class="w-full" wire:loading.attr="disabled">
+            <span wire:loading.remove wire:target="login">{{ __('Connect') }}</span>
+            <span wire:loading wire:target="login">{{ __('Connecting...') }}</span>
+        </flux:button>
+    </form>
 
-        @if (Route::has('register'))
-            <div class="space-x-1 text-sm text-center rtl:space-x-reverse text-zinc-600 dark:text-zinc-400">
-                <span>{{ __('Don\'t have an account?') }}</span>
-                <flux:link :href="route('register')" wire:navigate>{{ __('Sign up') }}</flux:link>
-            </div>
-        @endif
+    <div class="space-x-1 rtl:space-x-reverse text-center text-sm text-zinc-600 dark:text-zinc-400">
+        <span>{{ __('Need an account?') }}</span>
+        <flux:link :href="route('register')" wire:navigate>{{ __('Create one') }}</flux:link>
     </div>
-</x-layouts.auth>
+</div>

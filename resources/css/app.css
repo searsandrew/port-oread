@@ -31,6 +31,9 @@
     --color-accent: var(--color-neutral-800);
     --color-accent-content: var(--color-neutral-800);
     --color-accent-foreground: var(--color-white);
+
+    --color-generic-dark: #0b2442;
+    --color-generic-light: #4f7492;
 }
 
 @layer theme {
