@@ -4,6 +4,9 @@ namespace App\Providers;
 
 use App\Game\Contracts\GameDriver;
 use App\Game\Drivers\LocalSkirmishDriver;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -13,6 +16,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        // Game engine driver binding (offline/local driver)
         $this->app->bind(GameDriver::class, LocalSkirmishDriver::class);
     }
 
@@ -21,8 +25,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        if ($this->app->environment('local') && request()->secure()) {
-            \Illuminate\Support\Facades\URL::forceScheme('https');
-        }
+        // Login throttle limiter (email + IP)
+        RateLimiter::for('login', function (Request $request) {
+            $key = strtolower((string) $request->input('email')) . '|' . $request->ip();
+
+            return Limit::perMinute(5)->by($key);
+        });
     }
 }

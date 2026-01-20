@@ -4,7 +4,10 @@ use App\Game\GameService;
 use App\Services\AuthSyncService;
 use App\Services\CurrentProfile;
 use Livewire\Volt\Component;
+use function Livewire\Volt\layout;
 use Illuminate\Support\Str;
+
+layout('components.layouts.app');
 
 new class extends Component {
     public ?string $sessionId = null;

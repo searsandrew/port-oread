@@ -33,7 +33,7 @@ new class extends Component
 
     <!-- Top bar -->
     <div class="flex rounded-2xl   border border-zinc-800 bg-linear-to-b from-generic-dark to-generic-light">
-        <div class="flex w-full h-full pl-4 pr-2 py-1 rounded-2xl items-center justify-between inset-shadow-red-500" style="background-image: url('/images/grid-hex.png'); background-repeat: repeat; background-size: 25px;">
+        <div class="flex w-full h-full pl-4 pr-2 py-1 rounded-2xl items-center justify-between inset-shadow-red-500" style="background-image: url('{{ asset('/images/grid-hex.png') }}'); background-repeat: repeat; background-size: 25px;">
             <div class="flex items-center gap-3">
                 @if ($isConnected)
                     <span class="flex flex-row min-w-18 px-2.5 items-center justify-between rounded-full bg-amber-100 text-amber-800 inner-shadow-amber-500">
@@ -74,20 +74,8 @@ new class extends Component
 
     <!-- Primary actions -->
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <flux:button variant="primary" class="w-full justify-center">
-            Online Play (soon)
-        </flux:button>
-
-        <flux:button class="w-full justify-center" :href="route('game.table')">
-            Offline vs AI
-        </flux:button>
-
-        <flux:button class="w-full justify-center">
-            Lore
-        </flux:button>
-
-        <flux:button class="w-full justify-center">
-            Store
-        </flux:button>
+        <x-button size="lg"><span class="text-blue-100 text-xl font-thin uppercase shadow-inner tracking-wider">{{ __('Online Play') }}</span></x-button>
+        <x-button href="route('game.table')"><span class="text-blue-100 text-lg font-thin uppercase shadow-inner tracking-wider">{{ __('Offline vs AI') }}</span></x-button>
+        <x-button><span class="text-blue-100 text-lg font-thin uppercase shadow-inner tracking-wider">{{ __('Lore') }}</span></x-button>
     </div>
 </div>

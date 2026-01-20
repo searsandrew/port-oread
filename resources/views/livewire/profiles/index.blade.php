@@ -6,10 +6,12 @@ use Livewire\Volt\Component;
 
 use function Livewire\Volt\layout;
 
-layout('components.layouts.auth.card');
+layout('components.layouts.volt-auth');
 
 new class extends Component
 {
+    public bool $on = false;
+
     public function mount(CurrentProfile $current): void
     {
         $profiles = User::query()->orderBy('name')->get();
@@ -39,31 +41,46 @@ new class extends Component
     }
 }; ?>
 
-<div class="flex flex-col gap-6">
-    <x-auth-header :title="__('Choose a Profile')" :description="__('Select who’s playing on this device.')" />
+<div class="p-6">
+    <native:top-bar :title="__('Profile')" :subtitle="__('Select who\'s playing on this device.')">
+        <native:top-bar-action
+            id="dashboard"
+            label="Dashboard"
+            icon="home"
+            :url="route('dashboard')"
+        />
+        <native:top-bar-action
+            id="settings"
+            icon="settings"
+            label="Settings"
+            url="route('settings.index')"
+        />
+    </native:top-bar>
 
     <div class="flex flex-col gap-3">
         @forelse ($profiles as $profile)
-            <button type="button" wire:click="select('{{ $profile->id }}')" class="w-full text-left rounded-xl border border-zinc-200 dark:border-zinc-800 px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-900 transition">
-                <div class="flex items-center justify-between">
-                    <div class="font-medium text-zinc-900 dark:text-zinc-100">
-                        {{ $profile->name }}
-                    </div>
-                    <div class="text-sm text-zinc-500">
-                        {{ $profile->email ?? __('Offline profile') }}
-                    </div>
-                </div>
+            <x-button click="select('{{ $profile->id }}')" align="start" size="tile">
+            <div class="flex w-full items-center gap-4">
+                    <div class="min-w-0 flex-1">
+                        <div class="truncate font-medium text-white">
+                            {{ $profile->name }}
+                        </div>
 
-                @if (!empty($profile->tiber_user_id))
-                    <div class="mt-1 text-xs text-emerald-600 dark:text-emerald-400">
-                        {{ __('Connected') }}
+                        @if (!empty($profile->tiber_user_id))
+                            <div class="mt-1 text-xs text-emerald-400">
+                                {{ __('Connected') }}
+                            </div>
+                        @else
+                            <div class="mt-1 text-xs text-generic-light">
+                                {{ __('Not connected') }}
+                            </div>
+                        @endif
                     </div>
-                @else
-                    <div class="mt-1 text-xs text-zinc-500">
-                        {{ __('Not connected') }}
-                    </div>
-                @endif
-            </button>
+
+                    <flux:avatar :user="$profile" size="lg" circle class="shrink-0" />
+                </div>
+            </x-button>
+
         @empty
             <div class="text-sm text-zinc-600 dark:text-zinc-400">
                 {{ __('No profiles yet. Create one to start playing.') }}
