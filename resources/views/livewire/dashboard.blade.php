@@ -75,7 +75,7 @@ new class extends Component
     <!-- Primary actions -->
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <x-button size="lg"><span class="text-blue-100 text-xl font-thin uppercase shadow-inner tracking-wider">{{ __('Online Play') }}</span></x-button>
-        <x-button href="route('game.table')"><span class="text-blue-100 text-lg font-thin uppercase shadow-inner tracking-wider">{{ __('Offline vs AI') }}</span></x-button>
+        <x-button :href="route('game.table')"><span class="text-blue-100 text-lg font-thin uppercase shadow-inner tracking-wider">{{ __('Offline vs AI') }}</span></x-button>
         <x-button><span class="text-blue-100 text-lg font-thin uppercase shadow-inner tracking-wider">{{ __('Lore') }}</span></x-button>
     </div>
 </div>

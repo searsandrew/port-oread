@@ -3,17 +3,20 @@
 namespace App\Game\Drivers;
 
 use App\Game\Contracts\GameDriver;
+use App\Models\Planet as PlanetModel;
 use StellarSkirmish\GameConfig;
 use StellarSkirmish\GameEngine;
 use StellarSkirmish\GameState;
 use StellarSkirmish\Mercenary;
 use StellarSkirmish\Planet;
+use StellarSkirmish\PlanetClass;
 
 class LocalSkirmishDriver implements GameDriver
 {
     public function __construct(
         private readonly GameEngine $engine,
-    ) {}
+    ) {
+    }
 
     public function snapshot(string $sessionId): array
     {
@@ -29,12 +32,14 @@ class LocalSkirmishDriver implements GameDriver
     public function startNewGame(string $sessionId, array $options = []): array
     {
         $playerFaction = $options['player_faction'] ?? 'neupert';
-        $enemyFaction = $options['enemy_faction'] ?? collect(['neupert', 'wami', 'rogers'])->random();
+        $enemyFaction  = $options['enemy_faction'] ?? collect(['neupert', 'wami', 'rogers'])->random();
 
-        $state = $this->engine->startNewGame(GameConfig::standardTwoPlayer());
+        $config = $this->buildGameConfig();
+        $state  = $this->engine->startNewGame($config);
+
         $meta = [
             'last_play' => [],
-            'factions' => [
+            'factions'  => [
                 1 => $playerFaction,
                 2 => $enemyFaction,
             ],
@@ -53,34 +58,35 @@ class LocalSkirmishDriver implements GameDriver
             return $this->startNewGame($sessionId);
         }
 
-        $pid = (int) $playerId;
+        $pid       = (int) $playerId;
         $cardValue = $this->cardValueFromId($cardId);
 
         $before = clone $state;
 
-        $factions = $meta['factions'] ?? [1 => 'neupert', 2 => 'neupert'];
+        $factions   = $meta['factions'] ?? [1 => 'neupert', 2 => 'neupert'];
         $pidFaction = $factions[$pid] ?? 'neupert';
 
         $meta['last_play'][$pid] = [
             'cardValue' => $cardValue,
-            'img' => $this->cardImgFromValue($cardValue, $pidFaction),
+            'img'       => $this->cardImgFromValue($cardValue, $pidFaction),
         ];
 
         $after = $this->engine->playCard($state, playerId: $pid, cardValue: $cardValue);
 
-        // simple single-device opponent
+        // Simple single-device opponent
         if (
             $after->playerCount === 2
             && ($after->currentPlays[2] ?? null) === null
             && ($after->hands[2] ?? []) !== []
         ) {
-            $enemyCard = $this->pickEnemyCardValue($after);
+            $enemyCard    = $cardValue; // $this->pickEnemyCardValue($after);
             $enemyFaction = $factions[2] ?? 'neupert';
 
             $meta['last_play'][2] = [
                 'cardValue' => $enemyCard,
-                'img' => $this->cardImgFromValue($enemyCard, $enemyFaction),
+                'img'       => $this->cardImgFromValue($enemyCard, $enemyFaction),
             ];
+
             $after = $this->engine->playCard($after, playerId: 2, cardValue: $enemyCard);
         }
 
@@ -94,7 +100,7 @@ class LocalSkirmishDriver implements GameDriver
 
         return [
             'snapshot' => $this->toSnapshot($after, $meta),
-            'effects' => $effects,
+            'effects'  => $effects,
         ];
     }
 
@@ -107,100 +113,155 @@ class LocalSkirmishDriver implements GameDriver
 
     private function toSnapshot(GameState $state, array $meta = []): array
     {
-        $factions = $meta['factions'] ?? [1 => 'neupert', 2 => 'neupert'];
+        $factions      = $meta['factions'] ?? [1 => 'neupert', 2 => 'neupert'];
         $playerFaction = $factions[1] ?? 'neupert';
-        $enemyFaction = $factions[2] ?? 'neupert';
+        $enemyFaction  = $factions[2] ?? 'neupert';
 
         // --- planet stage ---
-        // Engine does not reveal/add to pot until the first play.
-        // UX: show a preview planet if pot is empty.
-        $stagePlanets = $state->planetPot;
+        $stagePlanets = $state->planetPot ?? [];
 
+        // UX: if pot is empty, show preview planet from deck
         if ($stagePlanets === []) {
-            $idx = $state->currentPlanetIndex ?? 0;
+            $idx  = $state->currentPlanetIndex ?? 0;
             $next = $state->planetDeck[$idx] ?? null;
             if ($next instanceof Planet) {
                 $stagePlanets = [$next];
             }
         }
+        $planetMetaById = cache()->remember('planets:metaById', now()->addHours(6), function () {
+            return PlanetModel::query()
+                ->get(['id', 'name', 'flavor', 'type', 'class', 'victory_point_value', 'filename'])
+                ->keyBy('id')
+                ->map(fn (PlanetModel $m) => [
+                    'name'     => $m->name,
+                    'flavor'   => $m->flavor,
+                    'type'     => $m->type,
+                    'class'    => $m->class,
+                    'vp'       => (int) $m->victory_point_value,
+                    'filename' => $m->filename,
+                ])
+                ->all();
+        });
 
-        $planets = array_map(function (Planet $p) {
-            $name = property_exists($p, 'name') ? ($p->name ?? 'Unknown Planet') : 'Unknown Planet';
-            $flavor = property_exists($p, 'flavor') ? ($p->flavor ?? '') : '';
+        $planets = array_map(function (Planet $p) use ($planetMetaById) {
+            $meta = $planetMetaById[$p->id] ?? null;
 
-            $type = '';
-            if (property_exists($p, 'planetClass') && $p->planetClass !== null) {
-                $type = is_object($p->planetClass) && property_exists($p->planetClass, 'value')
-                    ? (string) $p->planetClass->value
-                    : (string) $p->planetClass;
-            }
+            $name        = $meta['name'] ?? ($p->name ?? 'Unknown Planet');
+            $flavor      = $meta['flavor'] ?? ($p->description ?? '');
+            $planetClass = $meta['class'] ?? ($p->planetClass?->value ?? null);
+            $planetType  = $meta['type'] ?? null;
+            $vp          = $meta['vp'] ?? (int) $p->victoryPoints;
+
+            // DB filename is stored in imageLink for convenience.
+            $filename = $meta['filename'] ?? ($p->imageLink ?? null);
 
             return [
-                'id' => $p->id,
-                'name' => $name,
-                'flavor' => $flavor,
-                'type' => $type,
-                'vp' => (int) $p->victoryPoints,
-                'img' => "/images/planets/{$p->filename}",
+                'id'       => $p->id,
+                'name'     => $name,
+                'flavor'   => $flavor,
+                'type'     => $planetType,
+                'class'    => $planetClass,
+                'vp'       => $vp,
+                'filename' => $filename,
+                'img'      => $filename ? "/images/planets/{$filename}" : null,
+                'card_img' => $filename ? "/images/cards/planets/{$filename}" : null,
             ];
         }, $stagePlanets);
 
         $hud = [
-            'score' => (int) (($state->scores()[1] ?? 0)),
+            'score'   => (int) (($state->scores()[1] ?? 0)),
             'credits' => 0,
-            'pot_vp' => (int) array_sum(array_map(fn (Planet $p) => $p->victoryPoints, $stagePlanets)),
+            'pot_vp'  => (int) array_sum(array_map(fn (Planet $p) => $p->victoryPoints, $stagePlanets)),
         ];
 
         // --- hand ---
         $handValues = $state->hands[1] ?? [];
-        $mercMap = $this->mercsByStrengthForPlayer($state, 1);
+        $mercMap    = $this->mercsByStrengthForPlayer($state, 1);
 
         $hand = array_map(function (int $v) use ($mercMap, $playerFaction) {
             $merc = $mercMap[$v] ?? null;
 
             return [
-                'id' => (string) $v,
+                'id'  => (string) $v,
                 'img' => $this->cardImgFromValue($v, $playerFaction),
 
                 'isMerc' => $merc !== null,
-                'merc' => $merc ? [
-                    'id' => $merc->id,
-                    'name' => $merc->name,
-                    'ability_type' => $merc->abilityType->value,
-                    'params' => $merc->params,
+                'merc'   => $merc ? [
+                    'id'            => $merc->id,
+                    'name'          => $merc->name,
+                    'ability_type'  => $merc->abilityType->value,
+                    'params'        => $merc->params,
                     'base_strength' => $merc->baseStrength,
                 ] : null,
             ];
         }, $handValues);
 
-        // keep selection if still in hand; otherwise pick first card
-        $selected = null;
-        foreach ($hand as $c) {
-            if (($c['id'] ?? null) === ($this->loadSelectedCardId($state) ?? null)) {
-                $selected = $c['id'];
-                break;
-            }
-        }
-        $selected ??= ($hand[0]['id'] ?? null);
+        $selected = $hand[0]['id'] ?? null;
 
         return [
-            'hud' => $hud,
-            'planets' => $planets,
-            'hand' => $hand,
+            'hud'            => $hud,
+            'planets'        => $planets,
+            'hand'           => $hand,
             'selectedCardId' => $selected,
-            'gameOver' => $state->gameOver,
-            'endReason' => $state->endReason?->value,
-            'factions' => [
+            'gameOver'       => $state->gameOver,
+            'endReason'      => $state->endReason?->value,
+            'savedAt'        => isset($meta['saved_at']) ? (int) $meta['saved_at'] : null,
+            'factions'       => [
                 'player' => $playerFaction,
-                'enemy' => $enemyFaction,
+                'enemy'  => $enemyFaction,
             ],
         ];
     }
 
-    // If you later persist selected card into meta/state, wire it here.
-    private function loadSelectedCardId(GameState $state): ?string
+    private function buildGameConfig(): GameConfig
     {
-        return null;
+        $dbPlanets = PlanetModel::query()
+            ->where('is_standard', true)
+            ->orderBy('name')
+            ->get();
+
+        if ($dbPlanets->isEmpty()) {
+            $dbPlanets = PlanetModel::query()->orderBy('name')->get();
+        }
+
+        /** @var Planet[] $enginePlanets */
+        $enginePlanets = $dbPlanets->map(function (PlanetModel $m) {
+            return new Planet(
+                id: (string) $m->id,
+                victoryPoints: (int) $m->victory_point_value,
+                name: $m->name,
+                description: $m->flavor,
+                planetClass: $m->class ? PlanetClass::tryFrom($m->class) : null,
+                imageLink: $m->filename, // stash filename for snapshot URLs
+                abilities: [],
+            );
+        })->all();
+
+        $enginePlanets = $this->secureShuffle($enginePlanets);
+
+        return new GameConfig(
+            playerCount: 2,
+            planets: $enginePlanets,
+            fleetValues: range(1, 15),
+            seed: null,
+        );
+    }
+
+    /**
+     * Truly random shuffle (uses random_int).
+     *
+     * @template T
+     * @param array<int, T> $items
+     * @return array<int, T>
+     */
+    private function secureShuffle(array $items): array
+    {
+        for ($i = count($items) - 1; $i > 0; $i--) {
+            $j = random_int(0, $i);
+            [$items[$i], $items[$j]] = [$items[$j], $items[$i]];
+        }
+
+        return $items;
     }
 
     private function mercsByStrengthForPlayer(GameState $state, int $playerId): array
@@ -218,8 +279,8 @@ class LocalSkirmishDriver implements GameDriver
     {
         $winnerId = $this->detectWinnerId($before, $after);
 
-        $potBefore = count($before->planetPot ?? []);
-        $potAfter = count($after->planetPot ?? []);
+        $potBefore    = count($before->planetPot ?? []);
+        $potAfter     = count($after->planetPot ?? []);
         $tieEscalated = ($winnerId === null) && ($potAfter > $potBefore);
 
         if ($winnerId === null && ! $tieEscalated) {
@@ -227,33 +288,27 @@ class LocalSkirmishDriver implements GameDriver
         }
 
         $outcome = 'tie';
-        if ($winnerId === 1) {
-            $outcome = 'win';
-        }
-        if ($winnerId !== null && $winnerId !== 1) {
-            $outcome = 'loss';
-        }
-
-        $factions = $meta['factions'] ?? [1 => 'neupert', 2 => 'neupert'];
+        if ($winnerId === 1) $outcome = 'win';
+        if ($winnerId !== null && $winnerId !== 1) $outcome = 'loss';
 
         $lp = $meta['last_play'] ?? [];
 
         $p1Val = $lp[1]['cardValue'] ?? null;
         $p2Val = $lp[2]['cardValue'] ?? null;
 
-        $p1Img = $lp[1]['img'] ?? (is_int($p1Val) ? $this->cardImgFromValue($p1Val, $factions[1] ?? 'neupert') : null);
-        $p2Img = $lp[2]['img'] ?? (is_int($p2Val) ? $this->cardImgFromValue($p2Val, $factions[2] ?? 'neupert') : null);
+        $p1Img = $lp[1]['img'] ?? null;
+        $p2Img = $lp[2]['img'] ?? null;
 
         if (! $p1Img || ! $p2Img) {
             return [];
         }
 
         return [[
-            'type' => 'battle_resolve',
-            'player' => ['img' => $p1Img, 'strength' => $p1Val],
-            'enemy' => ['img' => $p2Img, 'strength' => $p2Val],
-            'outcome' => $outcome,
-            'planetMove' => $outcome === 'win' ? 'down' : ($outcome === 'loss' ? 'up' : 'none'),
+            'type'         => 'battle_resolve',
+            'player'       => ['img' => $p1Img, 'strength' => $p1Val],
+            'enemy'        => ['img' => $p2Img, 'strength' => $p2Val],
+            'outcome'      => $outcome,
+            'planetMove'   => $outcome === 'win' ? 'down' : ($outcome === 'loss' ? 'up' : 'none'),
             'tieEscalated' => $tieEscalated,
         ]];
     }
@@ -262,7 +317,7 @@ class LocalSkirmishDriver implements GameDriver
     {
         for ($pid = 1; $pid <= $after->playerCount; $pid++) {
             $beforeCount = count($before->claimedPlanets[$pid] ?? []);
-            $afterCount = count($after->claimedPlanets[$pid] ?? []);
+            $afterCount  = count($after->claimedPlanets[$pid] ?? []);
             if ($afterCount > $beforeCount) {
                 return $pid;
             }
@@ -276,7 +331,8 @@ class LocalSkirmishDriver implements GameDriver
         if (ctype_digit($cardId)) {
             return (int) $cardId;
         }
-        throw new \RuntimeException("Card ID '{$cardId}' is not numeric. Implement cardValueFromId() mapping.");
+
+        throw new \RuntimeException("Card ID '{$cardId}' is not numeric.");
     }
 
     private function cardImgFromValue(int $value, string $faction): string
@@ -292,7 +348,7 @@ class LocalSkirmishDriver implements GameDriver
         }
 
         $stateArr = $raw['state'] ?? null;
-        $meta = $raw['meta'] ?? ['last_play' => []];
+        $meta     = $raw['meta'] ?? ['last_play' => []];
 
         $state = is_array($stateArr) ? GameState::fromArray($stateArr) : null;
 
@@ -301,9 +357,11 @@ class LocalSkirmishDriver implements GameDriver
 
     private function save(string $sessionId, GameState $state, array $meta): void
     {
+        $meta['saved_at'] = now()->timestamp;
+
         cache()->put("game:{$sessionId}", [
             'state' => $state->toArray(),
-            'meta' => $meta,
-        ], now()->addHours(12));
+            'meta'  => $meta,
+        ], now()->addDays(30));
     }
 }

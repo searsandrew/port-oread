@@ -139,6 +139,47 @@
     animation: hud-shimmer 1.8s steps(2) infinite;
 }
 
+/* Selected state: make it read as a real "alternate background" */
+.hud-btn[aria-pressed="true"]{
+    border-color: rgba(255,184,72,.55);
+
+    /* slightly brighter / warmer screen fill */
+    background:
+        radial-gradient(120% 140% at 50% 0%,
+        rgba(255,184,72,.08) 0%,
+        rgba(79,116,146,.22) 35%,
+        rgba(11,36,66,.94) 78%,
+        rgba(8,18,30,.98) 100%);
+}
+
+/* optional: make the glass highlight a touch stronger when selected */
+.hud-btn[aria-pressed="true"]::before{
+    opacity: .72;
+}
+
+/* Disabled: look inert (still pretty), and stop “alive” feeling a bit */
+.hud-btn:disabled,
+.hud-btn[aria-disabled="true"]{
+    opacity: .72;
+    filter: saturate(.9);
+}
+
+/* dial back the glow + scan on disabled */
+.hud-btn:disabled::after,
+.hud-btn[aria-disabled="true"]::after{
+    opacity: .28;
+}
+
+.hud-btn:disabled .hud-scan::before,
+.hud-btn[aria-disabled="true"] .hud-scan::before{
+    opacity: .22;
+}
+
+.hud-btn:disabled .hud-scan::after,
+.hud-btn[aria-disabled="true"] .hud-scan::after{
+    opacity: .12;
+}
+
 /* Slow sweep across, then “rest” */
 @keyframes hud-scan{
     0%   { transform: translateX(-10%); opacity: 0; }

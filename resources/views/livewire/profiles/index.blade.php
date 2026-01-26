@@ -35,8 +35,20 @@ new class extends Component
 
     public function with(): array
     {
+        $current = app(\App\Services\CurrentProfile::class);
+
+        $currentUser = null;
+        if (method_exists($current, 'get')) {
+            $currentUser = $current->get();
+        } elseif (method_exists($current, 'current')) {
+            $currentUser = $current->current();
+        } elseif (method_exists($current, 'user')) {
+            $currentUser = $current->user();
+        }
+
         return [
             'profiles' => User::query()->orderBy('name')->get(),
+            'currentId' => $currentUser?->id,
         ];
     }
 }; ?>
@@ -59,28 +71,33 @@ new class extends Component
 
     <div class="flex flex-col gap-3">
         @forelse ($profiles as $profile)
-            <x-button click="select('{{ $profile->id }}')" align="start" size="tile">
-            <div class="flex w-full items-center gap-4">
+            @php $isCurrent = !empty($currentId) && $currentId === $profile->id; @endphp
+
+            <x-button click="select('{{ $profile->id }}')" align="start" size="tile" :on="$isCurrent" :disabled="$isCurrent">
+                <div class="flex w-full items-center gap-4">
                     <div class="min-w-0 flex-1">
                         <div class="truncate font-medium text-white">
                             {{ $profile->name }}
                         </div>
 
-                        @if (!empty($profile->tiber_user_id))
+                        @if ($isCurrent)
+                            <div class="mt-1 text-xs text-amber-300/90">
+                                {{ __('Selected') }}
+                            </div>
+                        @elseif (!empty($profile->tiber_user_id))
                             <div class="mt-1 text-xs text-emerald-400">
                                 {{ __('Connected') }}
                             </div>
                         @else
-                            <div class="mt-1 text-xs text-generic-light">
+                            <div class="mt-1 text-xs text-generic-light opacity-80">
                                 {{ __('Not connected') }}
                             </div>
                         @endif
                     </div>
 
-                    <flux:avatar :user="$profile" size="lg" circle class="shrink-0" />
+                    <flux:avatar :user="$profile" size="lg" circle class="shrink-0 ml-auto" />
                 </div>
             </x-button>
-
         @empty
             <div class="text-sm text-zinc-600 dark:text-zinc-400">
                 {{ __('No profiles yet. Create one to start playing.') }}
